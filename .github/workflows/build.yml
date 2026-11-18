@@ -41,17 +41,21 @@ jobs:
         run: |
           PKG=android/app/src/main/java/com/dzaky/strafunk
           mkdir -p $PKG
-          cp native/StepCounterPlugin.java native/MainActivity.java $PKG/
+          cp native/*.java $PKG/
+          cp -r native/res/. android/app/src/main/res/
           python3 - <<'EOF'
           p = 'android/app/src/main/AndroidManifest.xml'
           s = open(p).read()
           perms = ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'FOREGROUND_SERVICE',
-                   'FOREGROUND_SERVICE_LOCATION', 'POST_NOTIFICATIONS', 'ACTIVITY_RECOGNITION', 'WAKE_LOCK']
+                   'FOREGROUND_SERVICE_LOCATION', 'POST_NOTIFICATIONS', 'ACTIVITY_RECOGNITION', 'WAKE_LOCK',
+                   'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS']
           add = ''.join('    <uses-permission android:name="android.permission.%s" />\n' % x
                         for x in perms if ('android.permission.' + x + '"') not in s)
           add += '    <uses-feature android:name="android.hardware.location.gps" android:required="false" />\n'
           add += '    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />\n'
           s = s.replace('</manifest>', add + '</manifest>')
+          if 'TrackingService' not in s:
+              s = s.replace('</application>', '        <service android:name=".TrackingService" android:exported="false" android:foregroundServiceType="location" />\n    </application>')
           if 'screenOrientation' not in s:
               s = s.replace('<activity', '<activity android:screenOrientation="portrait"', 1)
           open(p, 'w').write(s)

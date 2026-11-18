@@ -2,9 +2,8 @@
   "name": "strafunk",
   "version": "1.0.0",
   "private": true,
-  "description": "Strafunk — pelacak jalan, lari, sepeda. Online & offline.",
+  "description": "Strafunk \u2014 pelacak jalan, lari, sepeda. Online & offline.",
   "dependencies": {
-    "@capacitor-community/background-geolocation": "^1.2.20",
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.0",

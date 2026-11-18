@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:background="@drawable/sf_notif_bg" android:orientation="vertical"
+    android:padding="16dp">
+    <TextView android:id="@+id/sf_label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:textColor="#FFC5F82A" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.08"
+        android:singleLine="true" android:text="● MEREKAM" />
+    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="bottom">
+        <TextView android:id="@+id/sf_km" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#FFFFFFFF" android:textSize="44sp" android:fontFamily="sans-serif-black"
+            android:letterSpacing="-0.04" android:includeFontPadding="false" android:text="0,00" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#FF8E8E93" android:textSize="16sp" android:textStyle="bold"
+            android:paddingStart="6dp" android:paddingBottom="6dp" android:text="km" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="10dp">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#FF8E8E93"
+                android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.06" android:text="WAKTU" />
+            <Chronometer android:id="@+id/sf_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF" android:textSize="17sp" android:textStyle="bold" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#FF8E8E93"
+                android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.06" android:text="PACE" />
+            <TextView android:id="@+id/sf_pace" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFC5F82A" android:textSize="17sp" android:textStyle="bold" android:text="--" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/sf_steps_lbl" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#FF8E8E93"
+                android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.06" android:text="LANGKAH" />
+            <TextView android:id="@+id/sf_steps" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF" android:textSize="17sp" android:textStyle="bold" android:text="0" />
+        </LinearLayout>
+    </LinearLayout>
+    <ProgressBar android:id="@+id/sf_prog" style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="12dp"
+        android:max="1000" android:progress="0"
+        android:progressTint="#FFC5F82A" android:progressBackgroundTint="#FF3A3A3E" />
+    <TextView android:id="@+id/sf_next" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:textColor="#FFA1A1A6" android:textSize="11sp" android:text="Km 1" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="12dp">
+        <TextView android:id="@+id/sf_btn_pause" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:background="@drawable/sf_btn_lime" android:gravity="center" android:textColor="#FF0B0B0C"
+            android:textSize="14sp" android:textStyle="bold" android:text="Jeda" />
+        <TextView android:layout_width="10dp" android:layout_height="1dp" />
+        <TextView android:id="@+id/sf_btn_finish" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:background="@drawable/sf_btn_dark" android:gravity="center" android:textColor="#FFFFFFFF"
+            android:textSize="14sp" android:textStyle="bold" android:text="Selesai" />
+    </LinearLayout>
+</LinearLayout>

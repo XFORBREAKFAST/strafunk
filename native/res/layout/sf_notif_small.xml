@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:background="@drawable/sf_notif_bg" android:orientation="horizontal"
+    android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp"
+    android:paddingTop="8dp" android:paddingBottom="8dp">
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/sf_label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#FFC5F82A" android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.08"
+            android:singleLine="true" android:text="● MEREKAM" />
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal"
+            android:gravity="bottom">
+            <TextView android:id="@+id/sf_km" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF" android:textSize="26sp" android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.03" android:text="0,00" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FF8E8E93" android:textSize="13sp" android:textStyle="bold"
+                android:paddingStart="4dp" android:paddingBottom="4dp" android:text="km" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:orientation="vertical" android:gravity="end">
+        <Chronometer android:id="@+id/sf_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#FFFFFFFF" android:textSize="17sp" android:textStyle="bold" />
+        <TextView android:id="@+id/sf_pace" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#FFC5F82A" android:textSize="12sp" android:textStyle="bold" android:text="--" />
+    </LinearLayout>
+</LinearLayout>

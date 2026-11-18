@@ -131,6 +131,7 @@ a{color:inherit;text-decoration:none}
 .leaf{position:absolute;inset:0;background:#0c0c0e;opacity:0;transition:opacity .4s}
 .leaf.show{opacity:1}
 .leaflet-container{background:#0c0c0e !important;font-family:inherit}
+.sf-tiles{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.95) saturate(.45)}
 .leaflet-control-attribution{background:rgba(0,0,0,.6) !important;color:#888 !important;font-size:9px !important}
 .leaflet-control-attribution a{color:#aaa !important}
 /* sheet & toast */
@@ -162,7 +163,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const CAP = window.Capacitor;
 const NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
 const plug = n => { try { return NATIVE ? CAP.registerPlugin(n) : null; } catch (e) { return null; } };
-const BG = plug('BackgroundGeolocation'), AppP = plug('App'), StepP = plug('StepCounter'),
+const TrackP = plug('Tracker'), AppP = plug('App'), StepP = plug('StepCounter'),
       ShareP = plug('Share'), FSP = plug('Filesystem'), SBP = plug('StatusBar');
 
 const store = {
@@ -191,6 +192,37 @@ function downsample(arr, max) { if (arr.length <= max) return arr.slice(); const
 let toastT;
 function toast(msg) { let t = $('#toast'); if (t) t.remove(); t = document.createElement('div'); t.id = 'toast'; t.textContent = msg; document.body.appendChild(t); clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 2200); }
 function vibrate(ms = 12) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+/* ===================== efek suara (disintesis, original) ===================== */
+const SFX = {
+  ctx: null,
+  ready() {
+    if (S.settings.sound === false) return null;
+    try { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume(); } catch (e) { return null; }
+    return this.ctx;
+  },
+  tone(f, t0, dur, vol, type, f2) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain(), t = c.currentTime + t0;
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.03);
+  },
+  play(k) {
+    if (!this.ready()) return; const T = this.tone.bind(this);
+    switch (k) {
+      case 'tap': T(1500, 0, .045, .03, 'sine', 1100); break;
+      case 'pop': T(520, 0, .1, .05, 'sine', 900); break;
+      case 'tick': T(880, 0, .14, .12, 'sine'); break;
+      case 'go': T(660, 0, .12, .12, 'triangle'); T(990, .1, .4, .14, 'sine'); break;
+      case 'km': T(1318.5, 0, .6, .11, 'sine'); T(1975.5, .09, .8, .07, 'sine'); break;
+      case 'success': [784, 988, 1175, 1568].forEach((f, i) => T(f, i * .07, .5, .08, 'sine')); break;
+      case 'pause': T(700, 0, .14, .07, 'sine', 480); break;
+      case 'resume': T(480, 0, .14, .07, 'sine', 760); break;
+      case 'error': T(300, 0, .2, .07, 'triangle', 200); break;
+    }
+  }
+};
+document.addEventListener('pointerdown', e => { if (e.target.closest('.press,.tab,.tabrec')) SFX.play('tap'); }, true);
 
 /* =========================== ikon =========================== */
 const I = {
@@ -222,7 +254,7 @@ const STOP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="#FF453A" ari
 
 /* =========================== state =========================== */
 const S = {
-  settings: Object.assign({ stride: 72, target: 10000, weight: 60, autoSync: true, duelWith: null }, store.get('settings', {})),
+  settings: Object.assign({ stride: 72, target: 10000, weight: 60, autoSync: true, sound: true, duelWith: null }, store.get('settings', {})),
   steps: Object.assign({ last: -1, days: {} }, store.get('steps', {})),
   acts: store.get('acts', []),
   user: store.get('user', null),
@@ -245,7 +277,7 @@ function onCounter(v) {
     if (d > 0 && d < 100000) { const k = dkey(); S.steps.days[k] = (S.steps.days[k] || 0) + d; }
   }
   S.steps.last = v; saveSteps();
-  if (REC) recStep(v);
+  if (REC && !REC.native) recStep(v);
   if (nav.cur && nav.cur.name === 'home') updateHomeSteps();
 }
 async function initSteps(ask) {
@@ -347,7 +379,7 @@ function loadLeaflet() {
 async function makeLeaf(el, path, live) {
   await loadLeaflet();
   const m = L.map(el, { zoomControl: false, attributionControl: true });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '© OpenStreetMap © CARTO' }).addTo(m);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap', className: 'sf-tiles' }).addTo(m);
   const ll = (path || []).map(p => [p[0], p[1]]);
   L.polyline(ll, { color: '#C5F82A', weight: 12, opacity: .25 }).addTo(m);
   const poly = L.polyline(ll, { color: '#C5F82A', weight: 5, lineCap: 'round', lineJoin: 'round' }).addTo(m);
@@ -370,7 +402,7 @@ async function makeLeaf(el, path, live) {
 /* =========================== sheet =========================== */
 let sheetClose = null;
 function openSheet(html, mount, onClose) {
-  closeSheet(true);
+  closeSheet(true); SFX.play('pop');
   const o = document.createElement('div'); o.id = 'overlay';
   o.innerHTML = '<div class="sheet" role="dialog"><span class="grab"></span>' + html + '</div>';
   o.addEventListener('click', e => { if (e.target === o) closeSheet(); });
@@ -498,8 +530,12 @@ function updateHomeSteps() {
 /* ============================ REKAM ============================ */
 let REC = null, recTimer = null, recLeaf = null, recView = '3d';
 const MAXSPD = { Jalan: 4.5, Lari: 9, Sepeda: 25 };
-function elapsed() { if (!REC) return 0; const now = Date.now(); return (now - REC.start - REC.pausedTotal - (REC.running ? 0 : now - REC.pausedAt)) / 1000; }
-function checkSplits() { while (REC.dist >= REC.kmNext) { const t = elapsed(), prev = REC.splits.reduce((s, v) => s + v, 0); REC.splits.push(Math.round(t - prev)); REC.kmNext += 1000; vibrate(40); toast('Kilometer ' + REC.splits.length + ' · ' + paceStr(t - prev)); } }
+function elapsed() {
+  if (!REC) return 0;
+  if (REC.native && REC.nAt) return (REC.nElapsed + (REC.running ? Date.now() - REC.nAt : 0)) / 1000;
+  const now = Date.now(); return (now - REC.start - REC.pausedTotal - (REC.running ? 0 : now - REC.pausedAt)) / 1000;
+}
+function checkSplits() { while (REC.dist >= REC.kmNext) { const t = elapsed(), prev = REC.splits.reduce((s, v) => s + v, 0); REC.splits.push(Math.round(t - prev)); REC.kmNext += 1000; vibrate(40); SFX.play('km'); toast('Kilometer ' + REC.splits.length + ' · ' + paceStr(t - prev)); } }
 function recStep(v) {
   if (REC.lastStep >= 0 && REC.running) {
     const d = v - REC.lastStep;
@@ -526,41 +562,93 @@ function onLoc(loc) {
   if (REC.steps === 0 && REC.type !== 'Sepeda' && S.stepState !== 'granted') REC.gpsSteps = Math.round(REC.dist * 100 / S.settings.stride);
   updateRecMap();
 }
-async function startGps() {
-  if (BG) {
-    try {
-      REC.watcher = await BG.addWatcher({ backgroundMessage: 'Strafunk lagi merekam aktivitasmu', backgroundTitle: 'Strafunk · Merekam', requestPermissions: true, stale: false, distanceFilter: 3 },
-        (loc, err) => {
-          if (err) { if (err.code === 'NOT_AUTHORIZED') openSheet('<h3>Izin lokasi dibutuhkan</h3><p>Biar jarak & rute kerekam, izinkan lokasi "Selalu" atau "Saat aplikasi dipakai".</p><button class="btn lime press" id="oset">Buka pengaturan</button><button class="btn ghost press" data-act="closeSheet">Nanti</button>', s => { s.querySelector('#oset').onclick = () => { BG.openSettings(); closeSheet(); }; }); return; }
-          if (loc) onLoc(loc);
-        });
-    } catch (e) { console.warn(e); }
-  } else if (navigator.geolocation) {
-    REC.watcher = navigator.geolocation.watchPosition(p => onLoc({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp }), e => console.warn(e), { enableHighAccuracy: true, maximumAge: 0 });
+function startGps() {
+  if (navigator.geolocation) REC.watcher = navigator.geolocation.watchPosition(p => onLoc({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp }), e => console.warn(e), { enableHighAccuracy: true, maximumAge: 0 });
+}
+function stopGps() { if (REC && !REC.native && REC.watcher != null && navigator.geolocation) navigator.geolocation.clearWatch(REC.watcher); }
+/* --- mesin native (TrackingService) --- */
+function applyNative(d, full) {
+  if (!REC || !d) return;
+  REC.dist = d.dist || 0; REC.steps = d.steps || 0; REC.acc = d.acc; REC.gotFix = !!d.fix; REC.est = !!d.est;
+  REC.nElapsed = d.elapsed || 0; REC.nAt = Date.now(); REC.running = !!d.running;
+  REC.lastGood = d.goodAgo < 0 ? 0 : Date.now() - d.goodAgo;
+  if (d.splits) REC.splits = d.splits;
+  if (full && d.path) { REC.path = d.path.map(p => [p[0], p[1], 0]); updateRecMap(); }
+  else if (d.newPt) { REC.path.push([d.lat, d.lng, Date.now()]); updateRecMap(); }
+}
+if (TrackP) {
+  TrackP.addListener('track', d => { if (REC && REC.native) applyNative(d, false); });
+  TrackP.addListener('split', d => { SFX.play('km'); vibrate(40); toast('Kilometer ' + d.km + ' · ' + (REC && REC.type === 'Sepeda' ? speedStr(1000, d.sec) + ' km/j' : paceStr(d.sec) + ' /km')); });
+  TrackP.addListener('action', d => { if (d.action === 'finish') onFinishAction(); });
+}
+function onFinishAction() { if (!REC) return; if (nav.cur.name !== 'record') go('record', {}, 'push'); setTimeout(() => { if (!sheetOpen()) exitSheet(); }, 400); }
+async function syncFromNative() {
+  if (!TrackP) return;
+  try {
+    const st = await TrackP.getState();
+    if (st.active) {
+      if (!REC) REC = { type: st.type, start: Date.now() - st.elapsed, running: st.running, dist: 0, path: [], steps: 0, splits: [], native: true, pausedTotal: 0, pausedAt: 0, nElapsed: 0, nAt: 0 };
+      applyNative(st, true); updateRecUI(); tabbar();
+      clearInterval(recTimer); recTimer = setInterval(updateRecUI, 1000);
+      if (nav.cur && nav.cur.name === 'home') refresh();
+      if (st.pendingAction === 'finish') onFinishAction();
+    }
+  } catch (e) { console.warn(e); }
+}
+function sheetWait(html, mount) { return new Promise(res => openSheet(html, mount, res)); }
+async function ensureTrackPerms() {
+  if (!TrackP) return true;
+  let s;
+  try {
+    s = await TrackP.status();
+    if (!s.location || ((!s.notif || !s.activity) && !store.get('askedAll', false))) { store.set('askedAll', true); s = await TrackP.requestAll(); }
+  } catch (e) { toast('Gagal cek izin: ' + (e.message || e)); return false; }
+  if (!s.location) {
+    await sheetWait('<h3>Izin lokasi ditolak</h3><p>Strafunk butuh lokasi buat ngitung jarak &amp; rute. Buka Pengaturan › Izin › Lokasi › pilih "Izinkan saat aplikasi digunakan".</p><button class="btn lime press" id="os">Buka pengaturan</button><button class="btn ghost press" data-act="closeSheet">Batal</button>', sh => { sh.querySelector('#os').onclick = () => { TrackP.openSettings(); closeSheet(); }; });
+    return false;
   }
+  if (!s.gps) {
+    await sheetWait('<h3>GPS HP masih mati</h3><p>Nyalakan <b>Lokasi</b> di HP biar jarak &amp; rute kerekam. Kalau tetap mati, jarak jalan/lari dihitung dari langkah.</p><button class="btn lime press" id="g">Nyalakan GPS</button><button class="btn ghost press" data-act="closeSheet">Lanjut aja</button>', sh => { sh.querySelector('#g').onclick = () => { TrackP.openGpsSettings(); closeSheet(); }; });
+  }
+  if (!s.battery && !store.get('askedBatt', false)) {
+    store.set('askedBatt', true);
+    await sheetWait('<h3>Biar tracking nggak dimatiin</h3><p>Beberapa HP suka matiin app di background. Izinkan Strafunk jalan tanpa batasan baterai supaya tetap merekam saat layar mati.</p><button class="btn lime press" id="b">Izinkan</button><button class="btn ghost press" data-act="closeSheet">Nanti</button>', sh => { sh.querySelector('#b').onclick = () => { TrackP.requestBattery(); closeSheet(); }; });
+  }
+  if (s.activity && S.stepState !== 'granted') initSteps(false);
+  return true;
 }
-function stopGps() {
-  if (!REC || REC.watcher == null) return;
-  if (BG) BG.removeWatcher({ id: REC.watcher }).catch(() => {}); else navigator.geolocation.clearWatch(REC.watcher);
-}
-function startRec(type) {
-  REC = { type, start: Date.now(), running: true, pausedAt: 0, pausedTotal: 0, dist: 0, path: [], lastPt: null, lastGood: 0, steps: 0, lastStep: S.steps.last, splits: [], kmNext: 1000, acc: null, gotFix: false, est: false, watcher: null };
-  startGps();
-  if (StepP && S.stepState === 'granted') StepP.start().catch(() => {});
+async function startRec(type) {
+  REC = { type, start: Date.now(), running: true, pausedAt: 0, pausedTotal: 0, dist: 0, path: [], lastPt: null, lastGood: 0, steps: 0, lastStep: S.steps.last, splits: [], kmNext: 1000, acc: null, gotFix: false, est: false, watcher: null, native: !!TrackP, nElapsed: 0, nAt: Date.now() };
+  if (TrackP) {
+    try { await TrackP.start({ type, stride: S.settings.stride, weight: S.settings.weight }); }
+    catch (e) { SFX.play('error'); toast('Gagal mulai: ' + (e.message || e)); REC = null; tabbar(); return; }
+  } else {
+    startGps();
+    if (StepP && S.stepState === 'granted') StepP.start().catch(() => {});
+  }
   clearInterval(recTimer); recTimer = setInterval(updateRecUI, 1000);
   updateRecUI(); tabbar();
 }
 function togglePause() {
   if (!REC) return; vibrate(20);
-  if (REC.running) { REC.running = false; REC.pausedAt = Date.now(); }
+  if (REC.native) {
+    REC.nElapsed = elapsed() * 1000; REC.nAt = Date.now();
+    REC.running = !REC.running;
+    (REC.running ? TrackP.resume() : TrackP.pause()).catch(() => {});
+  } else if (REC.running) { REC.running = false; REC.pausedAt = Date.now(); }
   else { REC.running = true; REC.pausedTotal += Date.now() - REC.pausedAt; REC.lastPt = null; REC.lastStep = S.steps.last; }
+  SFX.play(REC.running ? 'resume' : 'pause');
   const b = $('#playBtn'); if (b) { b.innerHTML = REC.running ? PAUSE() : PLAY(32); b.setAttribute('aria-label', REC.running ? 'Jeda' : 'Lanjutkan'); }
   updateRecUI();
 }
-function finishRec(save) {
+async function finishRec(save) {
   if (!REC) return;
-  stopGps(); clearInterval(recTimer);
-  const r = REC, sec = Math.round(elapsed()); REC = null;
+  clearInterval(recTimer);
+  let sec;
+  if (REC.native) {
+    try { const st = await TrackP.stop(); applyNative(st, true); sec = Math.round((st.elapsed || 0) / 1000); } catch (e) { sec = Math.round(elapsed()); }
+  } else { stopGps(); sec = Math.round(elapsed()); }
+  const r = REC; REC = null;
   if (recLeaf) { recLeaf.m.remove(); recLeaf = null; }
   if (!save) { toast('Aktivitas dibuang'); nav.stack.length ? pop() : go('home', {}, 'tab'); return; }
   if (r.dist < 20 && sec < 30) { toast('Terlalu pendek, nggak disimpan'); nav.stack.length ? pop() : go('home', {}, 'tab'); return; }
@@ -573,7 +661,7 @@ function finishRec(save) {
     path: downsample(r.path, 600).map(p => [+p[0].toFixed(6), +p[1].toFixed(6)]),
     week: weekKey(st), month: monthKey(st), synced: false
   };
-  S.acts.unshift(a); saveActs(); vibrate(60);
+  S.acts.unshift(a); saveActs(); vibrate(60); SFX.play('success');
   go('activity', { id: a.id, fresh: true }, 'replace');
   autoSync();
 }
@@ -581,7 +669,7 @@ function gpsLabel() {
   if (!REC) return '';
   if (!REC.gotFix) return ['#FFCC00', 'Mencari GPS…'];
   if (REC.acc) REC.accTxt = ' ±' + Math.round(REC.acc) + 'm';
-  if (REC.acc > 35 || Date.now() - REC.lastGood > 15000) return ['#FF9F0A', REC.type === 'Sepeda' ? 'GPS lemah' : 'GPS lemah · pakai langkah'];
+  if (REC.acc > 50 || Date.now() - REC.lastGood > 15000) return ['#FF9F0A', REC.type === 'Sepeda' ? 'GPS lemah' : 'GPS lemah · pakai langkah'];
   return ['#30D158', 'GPS kuat' + (REC.accTxt || '')];
 }
 function updateRecUI() {
@@ -659,6 +747,8 @@ SCREENS.record = {
     recView = '3d';
     if (!REC && p.fresh) {
       p.fresh = false;
+      ensureTrackPerms().then(ok => {
+      if (!ok) { if (nav.cur && nav.cur.name === 'record' && !REC) { nav.stack.length ? pop() : go('home', {}, 'tab'); } return; }
       const o = document.createElement('div');
       o.style.cssText = 'position:absolute;inset:0;z-index:10;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;animation:fade .2s both';
       el.appendChild(o);
@@ -667,11 +757,12 @@ SCREENS.record = {
         if (!o.isConnected) return;
         if (i >= seq.length) { o.remove(); return; }
         o.innerHTML = '<span style="font-size:' + (i < 3 ? 160 : 96) + 'px;font-weight:800;letter-spacing:-6px;color:' + (i < 3 ? '#fff' : 'var(--lime)') + ';animation:count .8s cubic-bezier(.2,.8,.2,1) both">' + seq[i] + '</span>';
-        vibrate(i < 3 ? 15 : 60);
+        vibrate(i < 3 ? 15 : 60); SFX.play(i < 3 ? 'tick' : 'go');
         if (i === 3) startRec(p.type || S.mode);
         i++; setTimeout(tick, 800);
       };
       tick();
+      });
     } else updateRecUI();
   },
   unmount() { if (recLeaf) { recLeaf.m.remove(); recLeaf = null; } },
@@ -1037,7 +1128,7 @@ SCREENS.profile = {
       '<section class="rise col gap10" style="--d:.1s"><div class="row between"><h2 class="h2">Badge</h2><span class="mut" style="font-size:13px">' + badges().filter(b => b.ok).length + ' dari 8</span></div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">' +
       badges().map((b, i) => '<div style="aspect-ratio:1;border-radius:22px;background:' + (b.ok ? (i % 3 === 0 ? 'var(--lime)' : '#1C1C1F') : '#0F0F11') + ';color:' + (b.ok && i % 3 === 0 ? 'var(--ink)' : b.ok ? 'var(--txt)' : '#48484A') + ';border:1px ' + (b.ok ? 'solid var(--line)' : 'dashed #2C2C2E') + ';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;animation:pop .5s cubic-bezier(.2,.9,.3,1.4) ' + (0.15 + i * 0.05).toFixed(2) + 's both"><span style="font-size:19px;font-weight:800;letter-spacing:-.5px">' + b.v + '</span><span style="font-size:9.5px;font-weight:600;text-align:center;padding:0 2px">' + b.n + '</span></div>').join('') + '</div></section>' +
       '<section class="card list rise" style="--d:.15s;border-radius:22px">' + '<button class="li press" data-act="history"><span>Riwayat aktivitas</span><span class="row gap6 v">' + t.count + ic('chev', 16) + '</span></button>' + set('target', 'Target harian', num(S.settings.target) + ' langkah') + set('stride', 'Panjang langkah', S.settings.stride + ' cm') + set('weight', 'Berat badan', S.settings.weight + ' kg') + '</section>' +
-      '<section class="card list rise" style="--d:.2s;border-radius:22px">' + sw('autoSync', 'Sinkron otomatis') +
+      '<section class="card list rise" style="--d:.2s;border-radius:22px">' + sw('autoSync', 'Sinkron otomatis') + sw('sound', 'Efek suara') + '<button class="li press" data-act="diag"><span>Diagnostik</span>' + ic('chev', 16, '#8E8E93') + '</button>' +
       (S.user ? '<button class="li press" data-act="syncNow"><span>Sinkron sekarang</span><span class="v">' + (unsynced ? unsynced + ' belum' : 'Beres') + '</span></button><button class="li press" data-act="logout"><span style="color:var(--red)">Keluar akun</span></button>' : '<button class="li press" data-act="auth"><span class="lime" style="font-weight:600">Masuk / Daftar akun</span>' + ic('chev', 16, '#C5F82A') + '</button>') + '</section>' +
       '<p class="mut" style="text-align:center;font-size:12px;margin:0">Strafunk v1.0 · data tersimpan di HP' + (S.user ? ' & cloud' : '') + '</p></div>';
   }
@@ -1051,6 +1142,17 @@ ACT.edit = t => {
     s.querySelector('#mn').onclick = () => upd(-cfg[1]); s.querySelector('#pl').onclick = () => upd(cfg[1]);
     s.querySelector('#ok').onclick = () => { S.settings[k] = v; saveSettings(); closeSheet(true); refresh(); toast('Tersimpan'); };
   });
+};
+ACT.diag = async () => {
+  const L = [];
+  L.push('Native: ' + NATIVE + ' · bridge: ' + (CAP ? typeof CAP.registerPlugin : 'none'));
+  L.push('Plugin Tracker: ' + !!TrackP + ' · Langkah: ' + !!StepP + ' · App: ' + !!AppP);
+  if (TrackP) { try { const s = await TrackP.status(); Object.keys(s).forEach(k => L.push(k + ': ' + s[k])); } catch (e) { L.push('status error: ' + (e.message || e)); } }
+  if (StepP) { try { const a = await StepP.isAvailable(); L.push('sensor langkah: ' + a.available + ' · izin: ' + a.granted); } catch (e) { L.push('langkah error: ' + (e.message || e)); } }
+  L.push('stepState: ' + S.stepState + ' · counter: ' + S.steps.last + ' · hari ini: ' + todaySteps());
+  L.push('Online: ' + S.online + ' · akun: ' + (S.user ? '@' + S.user.username : '-'));
+  if (REC) L.push('REC: ' + REC.type + ' native=' + REC.native + ' fix=' + REC.gotFix + ' acc=' + REC.acc + ' dist=' + Math.round(REC.dist));
+  openSheet('<h3>Diagnostik</h3><pre style="margin:0;padding:14px;border-radius:16px;background:#0F0F11;font-size:12px;line-height:1.6;white-space:pre-wrap;color:#D1D1D6;-webkit-user-select:text;user-select:text">' + esc(L.join('\n')) + '</pre><p>Kalau ada masalah, screenshot layar ini.</p>');
 };
 ACT.syncNow = async () => { if (!S.online) { toast('Lagi offline'); return; } toast('Menyinkronkan…'); const ok = await syncAll(true); toast(ok ? 'Sinkron beres' : 'Gagal sinkron'); refresh(); };
 ACT.logout = () => openSheet('<h3>Keluar akun?</h3><p>Aktivitas di HP tetap aman.</p><button class="btn press" id="lo" style="color:var(--red)">Keluar</button><button class="btn ghost press" data-act="closeSheet">Batal</button>', s => {
@@ -1070,14 +1172,14 @@ window.addEventListener('online', netChange); window.addEventListener('offline',
 if (AppP) {
   AppP.addListener('backButton', back);
   AppP.addListener('appStateChange', s => {
-    if (s.isActive) { if (StepP && S.stepState === 'granted') StepP.start().catch(() => {}); if (nav.cur && nav.cur.name === 'home') refresh(); }
+    if (s.isActive) { if (StepP && S.stepState === 'granted') StepP.start().catch(() => {}); syncFromNative(); if (nav.cur && nav.cur.name === 'home') refresh(); }
     else { store.set('steps', S.steps); if (StepP && !REC) StepP.stop().catch(() => {}); }
   });
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') back(); });
 (async function boot() {
   try { if (SBP) { SBP.setStyle({ style: 'DARK' }).catch(() => {}); SBP.setBackgroundColor({ color: '#000000' }).catch(() => {}); } } catch (e) {}
-  if (S.onboarded) { await initSteps(true); go('home', {}, 'tab'); }
+  if (S.onboarded) { await initSteps(true); go('home', {}, 'tab'); syncFromNative(); }
   else go('auth', {}, 'tab');
   fbInit();
   setInterval(() => { if (!REC && nav.cur && nav.cur.name === 'home' && !NATIVE) updateHomeSteps(); }, 5000);
