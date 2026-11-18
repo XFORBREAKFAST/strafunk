@@ -1187,9 +1187,9 @@ SCREENS.profile = {
       '<section class="rise col gap10" style="--d:.1s"><div class="row between"><h2 class="h2">Badge</h2><span class="mut" style="font-size:13px">' + badges().filter(b => b.ok).length + ' dari 8</span></div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">' +
       badges().map((b, i) => '<div style="aspect-ratio:1;border-radius:22px;background:' + (b.ok ? (i % 3 === 0 ? 'var(--lime)' : '#1C1C1F') : '#0F0F11') + ';color:' + (b.ok && i % 3 === 0 ? 'var(--ink)' : b.ok ? 'var(--txt)' : '#48484A') + ';border:1px ' + (b.ok ? 'solid var(--line)' : 'dashed #2C2C2E') + ';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;animation:pop .5s cubic-bezier(.2,.9,.3,1.4) ' + (0.15 + i * 0.05).toFixed(2) + 's both"><span style="font-size:19px;font-weight:800;letter-spacing:-.5px">' + b.v + '</span><span style="font-size:9.5px;font-weight:600;text-align:center;padding:0 2px">' + b.n + '</span></div>').join('') + '</div></section>' +
       '<section class="card list rise" style="--d:.15s;border-radius:22px">' + '<button class="li press" data-act="history"><span>Riwayat aktivitas</span><span class="row gap6 v">' + t.count + ic('chev', 16) + '</span></button>' + set('target', 'Target harian', num(S.settings.target) + ' langkah') + set('stride', 'Panjang langkah', S.settings.stride + ' cm') + set('weight', 'Berat badan', S.settings.weight + ' kg') + '</section>' +
-      '<section class="card list rise" style="--d:.2s;border-radius:22px">' + sw('autoSync', 'Sinkron otomatis') + sw('sound', 'Efek suara') + '<button class="li press" data-act="diag"><span>Diagnostik</span>' + ic('chev', 16, '#8E8E93') + '</button>' +
+      '<section class="card list rise" style="--d:.2s;border-radius:22px">' + sw('autoSync', 'Sinkron otomatis') + sw('sound', 'Efek suara') + '<button class="li press" data-act="checkUpdate"><span>Cek update</span>' + ic('chev', 16, '#8E8E93') + '</button><button class="li press" data-act="diag"><span>Diagnostik</span>' + ic('chev', 16, '#8E8E93') + '</button>' +
       (S.user ? '<button class="li press" data-act="syncNow"><span>Sinkron sekarang</span><span class="v">' + (unsynced ? unsynced + ' belum' : 'Beres') + '</span></button><button class="li press" data-act="logout"><span style="color:var(--red)">Keluar akun</span></button>' : '<button class="li press" data-act="auth"><span class="lime" style="font-weight:600">Masuk / Daftar akun</span>' + ic('chev', 16, '#C5F82A') + '</button>') + '</section>' +
-      '<p class="mut" style="text-align:center;font-size:12px;margin:0">Strafunk v1.0 · data tersimpan di HP' + (S.user ? ' & cloud' : '') + '</p></div>';
+      '<p class="mut" style="text-align:center;font-size:12px;margin:0">Strafunk build ' + APP_BUILD + ' · data tersimpan di HP' + (S.user ? ' & cloud' : '') + '</p></div>';
   }
 };
 ACT.sw = t => { const k = t.dataset.v; S.settings[k] = !S.settings[k]; saveSettings(); t.classList.toggle('on', S.settings[k]); t.setAttribute('aria-checked', S.settings[k]); vibrate(10); if (k === 'autoSync' && S.settings[k]) autoSync(); };
@@ -1218,6 +1218,24 @@ ACT.logout = () => openSheet('<h3>Keluar akun?</h3><p>Aktivitas di HP tetap aman
   s.querySelector('#lo').onclick = async () => { try { if (F) await F.au.signOut(F.auth); } catch (e) {} S.user = null; store.set('user', null); closeSheet(true); refresh(); toast('Sudah keluar'); };
 });
 
+/* ============================ UPDATE OTOMATIS ============================ */
+const APP_BUILD = 0; // diisi otomatis oleh GitHub Actions
+async function checkUpdate(manual) {
+  if (!S.online || !APP_BUILD) { if (manual) toast(APP_BUILD ? 'Lagi offline' : 'Versi pengembangan'); return; }
+  try {
+    const r = await fetch('https://api.github.com/repos/XFORBREAKFAST/strafunk/releases/latest', { cache: 'no-store' });
+    const j = await r.json(); const n = parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10);
+    const url = j.assets && j.assets[0] && j.assets[0].browser_download_url;
+    if (!n || !url || n <= APP_BUILD) { if (manual) toast('Sudah versi terbaru (build ' + APP_BUILD + ')'); return; }
+    if (!manual && store.get('skipBuild', 0) === n) return;
+    openSheet('<h3>Update tersedia ✨</h3><p>Build ' + n + ' sudah keluar (kamu di build ' + APP_BUILD + '). Download, lalu buka file-nya dan tekan <b>Update</b>. Data kamu tetap aman.</p><button class="btn lime press" id="upGo">Download update</button><button class="btn ghost press" id="upLater">Nanti aja</button>', sh => {
+      sh.querySelector('#upGo').onclick = () => { closeSheet(true); location.href = url; };
+      sh.querySelector('#upLater').onclick = () => { store.set('skipBuild', n); closeSheet(); };
+    });
+  } catch (e) { if (manual) toast('Gagal cek update'); }
+}
+ACT.checkUpdate = () => checkUpdate(true);
+
 /* ============================ BOOT ============================ */
 function netChange() {
   S.online = navigator.onLine;
@@ -1241,6 +1259,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') back(); });
   if (S.onboarded) { await initSteps(true); go('home', {}, 'tab'); syncFromNative(); }
   else go('auth', {}, 'tab');
   fbInit();
+  setTimeout(() => checkUpdate(false), 2500);
   setInterval(() => { if (!REC && nav.cur && nav.cur.name === 'home' && !NATIVE) updateHomeSteps(); }, 5000);
 })();
 </script>

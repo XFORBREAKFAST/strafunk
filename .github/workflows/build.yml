@@ -22,6 +22,9 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Keystore tetap (biar update tanpa uninstall)
+        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+
       - name: Install dependencies
         run: npm install
 
@@ -61,6 +64,13 @@ jobs:
           open(p, 'w').write(s)
           print(s)
           EOF
+
+      - name: Nomor versi
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "version" android/app/build.gradle
+          sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
+          grep -n "APP_BUILD =" www/index.html
 
       - name: Sync
         run: npx cap sync android
