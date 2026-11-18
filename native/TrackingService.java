@@ -59,6 +59,9 @@ public class TrackingService extends Service implements LocationListener, Sensor
     static long startRt = 0, pausedTotal = 0, pausedAt = 0, lastGood = 0, lastT = 0;
     static double lastLat = Double.NaN, lastLng = 0, lastStep = -1;
     static int kmNext = 1000;
+    // Kalman sederhana buat ngehalusin GPS
+    static double kLat = 0, kLng = 0, kVar = -1, spdS = 0;
+    static long kT = 0;
     public static final ArrayList<double[]> path = new ArrayList<>();
     public static final ArrayList<Integer> splits = new ArrayList<>();
 
@@ -94,7 +97,7 @@ public class TrackingService extends Service implements LocationListener, Sensor
         weight = it.getDoubleExtra("weight", 60);
         dist = 0; steps = 0; acc = -1; gotFix = false; est = false;
         path.clear(); splits.clear();
-        lastLat = Double.NaN; lastStep = -1; kmNext = 1000; lastGood = 0;
+        lastLat = Double.NaN; lastStep = -1; kmNext = 1000; lastGood = 0; kVar = -1; spdS = 0;
         startRt = SystemClock.elapsedRealtime(); pausedTotal = 0; pausedAt = 0;
         running = true; active = true;
 
@@ -136,7 +139,7 @@ public class TrackingService extends Service implements LocationListener, Sensor
     private void setRunning(boolean r) {
         if (!active || running == r) return;
         long now = SystemClock.elapsedRealtime();
-        if (r) { pausedTotal += now - pausedAt; lastLat = Double.NaN; lastStep = -1; }
+        if (r) { pausedTotal += now - pausedAt; lastLat = Double.NaN; lastStep = -1; kVar = -1; }
         else pausedAt = now;
         running = r;
         notifyUpdate();
@@ -170,19 +173,34 @@ public class TrackingService extends Service implements LocationListener, Sensor
     public void onLocationChanged(Location l) {
         acc = l.hasAccuracy() ? l.getAccuracy() : -1;
         gotFix = true;
-        if (!running) { lastLat = Double.NaN; return; }
+        if (!running) { lastLat = Double.NaN; kVar = -1; return; }
         if (l.hasAccuracy() && l.getAccuracy() > 50) return;
         long t = System.currentTimeMillis();
+        // --- filter Kalman: posisi GPS dihaluskan sesuai akurasinya ---
+        double a = Math.max(l.hasAccuracy() ? l.getAccuracy() : 10, 3);
+        double q = "Sepeda".equals(type) ? 8 : 3;
+        if (kVar < 0) { kLat = l.getLatitude(); kLng = l.getLongitude(); kVar = a * a; kT = t; }
+        else {
+            double dtS = Math.max(0, (t - kT) / 1000.0);
+            kVar += dtS * q * q;
+            double K = kVar / (kVar + a * a);
+            kLat += K * (l.getLatitude() - kLat);
+            kLng += K * (l.getLongitude() - kLng);
+            kVar = (1 - K) * kVar;
+            kT = t;
+        }
         if (!Double.isNaN(lastLat)) {
             float[] r = new float[1];
-            Location.distanceBetween(lastLat, lastLng, l.getLatitude(), l.getLongitude(), r);
+            Location.distanceBetween(lastLat, lastLng, kLat, kLng, r);
             double d = r[0], dt = (t - lastT) / 1000.0;
-            if (d < 3) return;
+            if (d < 2) return;
             if (dt > 0 && d / dt > maxSpeed()) return;
+            double sp = l.hasSpeed() ? l.getSpeed() : (dt > 0 ? d / dt : 0);
+            spdS = spdS * 0.6 + sp * 0.4;
             dist += d;
             checkSplits();
         }
-        lastLat = l.getLatitude(); lastLng = l.getLongitude(); lastT = t; lastGood = t;
+        lastLat = kLat; lastLng = kLng; lastT = t; lastGood = t;
         if (path.size() < 20000) path.add(new double[]{ lastLat, lastLng });
         emit(true);
     }
@@ -242,6 +260,7 @@ public class TrackingService extends Service implements LocationListener, Sensor
         d.put("running", running);
         d.put("type", type);
         d.put("dist", dist);
+        d.put("spd", spdS);
         d.put("steps", steps);
         d.put("elapsed", active ? elapsedMs() : 0);
         d.put("acc", acc);

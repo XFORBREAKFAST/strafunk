@@ -123,6 +123,8 @@ a{color:inherit;text-decoration:none}
 .map3d{position:relative;overflow:hidden;perspective:900px;perspective-origin:50% 25%;background:radial-gradient(120% 80% at 50% 32%,#10140A,#000)}
 .plane{position:absolute;left:50%;top:56%;width:560px;height:560px;margin:-280px 0 0 -280px;transform:rotateX(58deg) rotateZ(-26deg);transform-style:preserve-3d;background:#0C0C0E;background-image:linear-gradient(rgba(255,255,255,.07) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.07) 2px,transparent 2px);background-size:70px 70px}
 .plane.orbit{animation:orbit 14s ease-in-out infinite alternate}
+.lp{fill:rgba(197,248,42,.4);transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-out infinite}
+.plane.live{background:#0C0C0E;background-image:none}
 .plane.cam{animation:cam 3.2s cubic-bezier(.3,0,.2,1) both}
 .plane.float{animation:float 8s ease-in-out infinite;-webkit-mask-image:radial-gradient(closest-side,#000 60%,transparent);mask-image:radial-gradient(closest-side,#000 60%,transparent);background-color:transparent}
 .plane svg{position:absolute;inset:0;overflow:visible}
@@ -131,6 +133,7 @@ a{color:inherit;text-decoration:none}
 .leaf{position:absolute;inset:0;background:#0c0c0e;opacity:0;transition:opacity .4s}
 .leaf.show{opacity:1}
 .leaflet-container{background:#0c0c0e !important;font-family:inherit}
+.lf-me{position:relative;width:96px;height:96px}.lf-rot{position:absolute;inset:0;transition:transform .9s cubic-bezier(.2,.8,.2,1)}.lf-dot{position:absolute;left:38px;top:38px;width:20px;height:20px;border-radius:50%;background:#C5F82A;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.5)}.lf-pulse{position:absolute;left:28px;top:28px;width:40px;height:40px;border-radius:50%;background:rgba(197,248,42,.35);animation:pulse 1.8s ease-out infinite}
 .sf-tiles{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.95) saturate(.45)}
 .leaflet-control-attribution{background:rgba(0,0,0,.6) !important;color:#888 !important;font-size:9px !important}
 .leaflet-control-attribution a{color:#aaa !important}
@@ -334,11 +337,24 @@ function project(path, W, H, padd) {
   const ox = (W - (mxx - mnx) * sc) / 2, oy = (H - (mxy - mny) * sc) / 2;
   return xy.map(p => [ox + (p[0] - mnx) * sc, oy + (p[1] - mny) * sc]);
 }
+function thin(pts, minPx) { if (pts.length < 3) return pts; const o = [pts[0]]; for (let i = 1; i < pts.length - 1; i++) { const l = o[o.length - 1]; if (Math.hypot(pts[i][0] - l[0], pts[i][1] - l[1]) >= minPx) o.push(pts[i]); } o.push(pts[pts.length - 1]); return o; }
+function smoothD(pts) {
+  pts = thin(pts, 3);
+  if (pts.length < 3) return dOf(pts);
+  const f = p => p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+  let d = 'M' + f(pts[0]);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ' C' + f([p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]) + ' ' + f([p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6]) + ' ' + f(p2);
+  }
+  return d;
+}
+function chaikin(pts, it) { let a = pts; for (let k = 0; k < (it || 2); k++) { if (a.length < 3) break; const o = [a[0]]; for (let i = 0; i < a.length - 1; i++) { const p = a[i], q = a[i + 1]; o.push([p[0] * .75 + q[0] * .25, p[1] * .75 + q[1] * .25], [p[0] * .25 + q[0] * .75, p[1] * .25 + q[1] * .75]); } o.push(a[a.length - 1]); a = o; } return a; }
 const dOf = pts => pts.length ? 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L ') : '';
 function routeLayer(path, anim) {
   const pts = project(downsample(path || [], 500), 560, 560, 90);
   if (!pts.length) return { svg: '<svg width="560" height="560" viewBox="0 0 560 560"></svg>', end: [280, 280] };
-  const d = dOf(pts), s = pts[0], e = pts[pts.length - 1];
+  const d = smoothD(pts), s = pts[0], e = pts[pts.length - 1];
   const a1 = anim === 'once' ? 'animation:draw 3s cubic-bezier(.45,0,.2,1) .2s both' : anim === 'loop' ? 'animation:drawLoop 4s cubic-bezier(.45,0,.2,1) infinite' : '';
   const a2 = anim === 'once' ? 'animation:head 3s cubic-bezier(.45,0,.2,1) .2s both' : anim === 'loop' ? 'animation:headLoop 4s cubic-bezier(.45,0,.2,1) infinite' : '';
   const line = pts.length > 1 ?
@@ -362,7 +378,7 @@ function map3d(path, o) {
 function miniRoute(path, w, h, loop) {
   const pts = project(downsample(path || [], 200), w, h, 16);
   if (pts.length < 2) return '<div class="row" style="height:100%;justify-content:center;font-size:12px;color:var(--mut)">Tanpa rute GPS</div>';
-  return '<svg width="100%" height="100%" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="' + dOf(pts) + '" fill="none" stroke="#C5F82A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" pathLength="1" style="stroke-dasharray:1;animation:' + (loop ? 'drawLoop 3.6s' : 'draw 1.6s') + ' cubic-bezier(.45,0,.2,1) ' + (loop ? 'infinite' : 'both') + '"/></svg>';
+  return '<svg width="100%" height="100%" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="' + smoothD(pts) + '" fill="none" stroke="#C5F82A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" pathLength="1" style="stroke-dasharray:1;animation:' + (loop ? 'drawLoop 3.6s' : 'draw 1.6s') + ' cubic-bezier(.45,0,.2,1) ' + (loop ? 'infinite' : 'both') + '"/></svg>';
 }
 
 /* ======================= Leaflet (mode online) ======================= */
@@ -376,25 +392,35 @@ function loadLeaflet() {
   });
   return leafP;
 }
+function bearingDeg(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r), x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r); return (Math.atan2(y, x) / r + 360) % 360; }
+function headingOf(path) { for (let i = path.length - 1; i > 0; i--) { for (let j = i - 1; j >= 0 && j >= i - 6; j--) { if (hav(path[j], path[i]) > 4) return bearingDeg(path[j], path[i]); } } return null; }
+const ME_HTML = '<div class="lf-me"><div class="lf-rot"><svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true"><defs><radialGradient id="cg" cx="48" cy="48" r="46" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#C5F82A" stop-opacity=".55"/><stop offset="1" stop-color="#C5F82A" stop-opacity="0"/></radialGradient></defs><path d="M48 48 L30 6 A46 46 0 0 1 66 6 Z" fill="url(#cg)"/></svg></div><span class="lf-pulse"></span><span class="lf-dot"></span></div>';
 async function makeLeaf(el, path, live) {
   await loadLeaflet();
   const m = L.map(el, { zoomControl: false, attributionControl: true });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap', className: 'sf-tiles' }).addTo(m);
   const ll = (path || []).map(p => [p[0], p[1]]);
-  L.polyline(ll, { color: '#C5F82A', weight: 12, opacity: .25 }).addTo(m);
-  const poly = L.polyline(ll, { color: '#C5F82A', weight: 5, lineCap: 'round', lineJoin: 'round' }).addTo(m);
-  let dot = null;
+  const glow = L.polyline(chaikin(ll), { color: '#C5F82A', weight: 14, opacity: .22 }).addTo(m);
+  const poly = L.polyline(chaikin(ll), { color: '#C5F82A', weight: 5, lineCap: 'round', lineJoin: 'round', smoothFactor: 1.5 }).addTo(m);
+  let me = null, cur = null, anim = 0;
   if (ll.length) {
     L.circleMarker(ll[0], { radius: 7, color: '#C5F82A', weight: 3, fillColor: '#000', fillOpacity: 1 }).addTo(m);
-    dot = L.circleMarker(ll[ll.length - 1], { radius: 8, color: '#fff', weight: 3, fillColor: '#C5F82A', fillOpacity: 1 }).addTo(m);
-    if (ll.length > 1) m.fitBounds(poly.getBounds(), { padding: [50, 50] }); else m.setView(ll[0], 17);
+    cur = ll[ll.length - 1];
+    if (live) me = L.marker(cur, { icon: L.divIcon({ html: ME_HTML, className: '', iconSize: [96, 96], iconAnchor: [48, 48] }), interactive: false }).addTo(m);
+    else L.circleMarker(cur, { radius: 8, color: '#fff', weight: 3, fillColor: '#C5F82A', fillOpacity: 1 }).addTo(m);
+    if (live) m.setView(cur, 17); else if (ll.length > 1) m.fitBounds(poly.getBounds(), { padding: [50, 50] }); else m.setView(cur, 17);
   } else m.setView([-6.2, 106.8], 12);
   return {
     m, update(path2) {
-      const l2 = path2.map(p => [p[0], p[1]]); if (!l2.length) return; poly.setLatLngs(l2);
-      if (!dot) dot = L.circleMarker(l2[l2.length - 1], { radius: 8, color: '#fff', weight: 3, fillColor: '#C5F82A', fillOpacity: 1 }).addTo(m);
-      dot.setLatLng(l2[l2.length - 1]); m.panTo(l2[l2.length - 1], { animate: true });
-      if (l2.length === 1) m.setView(l2[0], 17);
+      const l2 = path2.map(p => [p[0], p[1]]); if (!l2.length) return;
+      const sm = chaikin(l2); poly.setLatLngs(sm); glow.setLatLngs(sm);
+      const to = l2[l2.length - 1];
+      if (!me) { me = L.marker(to, { icon: L.divIcon({ html: ME_HTML, className: '', iconSize: [96, 96], iconAnchor: [48, 48] }), interactive: false }).addTo(m); cur = to; m.setView(to, 17); }
+      const h = headingOf(l2); const rot = me.getElement() && me.getElement().querySelector('.lf-rot'); if (rot && h !== null) rot.style.transform = 'rotate(' + h.toFixed(0) + 'deg)';
+      const from = cur || to, t0 = performance.now(); cancelAnimationFrame(anim);
+      const stepF = now => { const k = Math.min(1, (now - t0) / 950); const p = [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k]; me.setLatLng(p); cur = p; if (k < 1) anim = requestAnimationFrame(stepF); };
+      anim = requestAnimationFrame(stepF);
+      m.panTo(to, { animate: true, duration: 1, easeLinearity: 1, noMoveStart: true });
     }
   };
 }
@@ -556,7 +582,7 @@ function onLoc(loc) {
     const d = hav(REC.lastPt, pt), dt = (pt[2] - REC.lastPt[2]) / 1000;
     if (d < 3) return;
     if (dt > 0 && d / dt > MAXSPD[REC.type]) return;
-    REC.dist += d; checkSplits();
+    REC.dist += d; REC.distAt = Date.now(); if (dt > 0) REC.spd = (REC.spd || 0) * .6 + (d / dt) * .4; checkSplits();
   }
   REC.path.push(pt); REC.lastPt = pt; REC.lastGood = Date.now();
   if (REC.steps === 0 && REC.type !== 'Sepeda' && S.stepState !== 'granted') REC.gpsSteps = Math.round(REC.dist * 100 / S.settings.stride);
@@ -571,6 +597,8 @@ function applyNative(d, full) {
   if (!REC || !d) return;
   REC.dist = d.dist || 0; REC.steps = d.steps || 0; REC.acc = d.acc; REC.gotFix = !!d.fix; REC.est = !!d.est;
   REC.nElapsed = d.elapsed || 0; REC.nAt = Date.now(); REC.running = !!d.running;
+  if (d.spd != null) REC.spd = d.spd;
+  if (d.dist !== REC.lastDist) { REC.lastDist = d.dist; REC.distAt = Date.now(); }
   REC.lastGood = d.goodAgo < 0 ? 0 : Date.now() - d.goodAgo;
   if (d.splits) REC.splits = d.splits;
   if (full && d.path) { REC.path = d.path.map(p => [p[0], p[1], 0]); updateRecMap(); }
@@ -676,20 +704,51 @@ function updateRecUI() {
   const lk = $('#liveKm'); if (lk && REC) lk.textContent = km(REC.dist);
   if (!REC || !$('#r-dist')) return;
   const t = elapsed();
-  $('#r-dist').textContent = km(REC.dist);
   $('#r-time').textContent = dur(t);
   $('#r-pace').textContent = REC.type === 'Sepeda' ? speedStr(REC.dist, t) : paceStr(REC.dist > 30 ? t / (REC.dist / 1000) : NaN);
   $('#r-steps').textContent = REC.type === 'Sepeda' ? num(kcalFor(REC.type, REC.dist, t)) : num(REC.steps || REC.gpsSteps || 0);
   const g = gpsLabel(); $('#r-gdot').style.background = REC.running ? g[0] : '#8E8E93';
   $('#r-gtxt').textContent = REC.type + ' · ' + (REC.running ? g[1] : 'Dijeda') + ' · ' + (S.online ? 'Online' : 'Offline');
 }
+function liveHtml() {
+  return '<div class="plane orbit live"><svg width="560" height="560" viewBox="0 0 560 560" style="overflow:visible"><defs><pattern id="lgrid" width="70" height="70" patternUnits="userSpaceOnUse"><path d="M70 0H0V70" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="2"/></pattern><filter id="lgl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter><radialGradient id="lcone" cx="0" cy="0" r="90" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#C5F82A" stop-opacity=".5"/><stop offset="1" stop-color="#C5F82A" stop-opacity="0"/></radialGradient></defs>' +
+    '<g id="liveG" style="transition:transform 1s linear"><rect x="-30000" y="-30000" width="60000" height="60000" fill="url(#lgrid)"/><path id="liveGlow" fill="none" stroke="#C5F82A" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" opacity=".4" filter="url(#lgl)"/><path id="liveLine" fill="none" stroke="#C5F82A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><circle id="liveStart" r="10" fill="#000" stroke="#C5F82A" stroke-width="4" cx="-999" cy="-999"/>' +
+    '<g id="liveCone" style="transition:transform 1s linear"><path d="M0 0 L-34 -84 A90 90 0 0 1 34 -84 Z" fill="url(#lcone)"/></g></g><g transform="translate(280 280)"><circle r="22" class="lp"/></g></svg>' +
+    '<div class="bb" style="left:280px;top:280px"><span style="position:absolute;left:-13px;top:-13px;width:26px;height:26px;border-radius:50%;background:#C5F82A;border:4px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.6)"></span></div></div>';
+}
 function updateRecMap() {
   if (!REC || !$('#r-map')) return;
   if (recView === 'map' && recLeaf) { recLeaf.update(REC.path); return; }
-  const host = $('#r-map .plane'); if (!host) return;
-  const r = routeLayer(REC.path, null);
-  host.querySelector('.rlayer').innerHTML = r.svg;
-  const bb = host.querySelector('.bb'); bb.style.left = r.end[0].toFixed(1) + 'px'; bb.style.top = r.end[1].toFixed(1) + 'px';
+  const g = $('#liveG'); if (!g || !REC.path.length) return;
+  const P = downsample(REC.path, 900), o = P[0], c = Math.cos(o[0] * Math.PI / 180);
+  const S = REC.type === 'Sepeda' ? 560 / 1500 : 560 / 450; // px per meter
+  const xy = P.map(p => [(p[1] - o[1]) * c * 111320 * S, -(p[0] - o[0]) * 110540 * S]);
+  const d = xy.length > 1 ? smoothD(xy) : '';
+  $('#liveLine').setAttribute('d', d); $('#liveGlow').setAttribute('d', d);
+  const st = $('#liveStart'); st.setAttribute('cx', xy[0][0].toFixed(1)); st.setAttribute('cy', xy[0][1].toFixed(1));
+  const e = xy[xy.length - 1];
+  g.style.transform = 'translate(' + (280 - e[0]).toFixed(1) + 'px,' + (280 - e[1]).toFixed(1) + 'px)';
+  const h = headingOf(REC.path); const cone = $('#liveCone');
+  cone.style.opacity = h === null ? 0 : 1;
+  cone.style.transform = 'translate(' + e[0].toFixed(1) + 'px,' + e[1].toFixed(1) + 'px) rotate(' + (h || 0).toFixed(0) + 'deg)';
+}
+/* angka km mulus: animasi tiap frame + prediksi dari kecepatan */
+let distRaf = 0;
+function distLoop() {
+  cancelAnimationFrame(distRaf);
+  let last = performance.now();
+  const f = now => {
+    const el = $('#r-dist'); if (!el) return;
+    if (!REC) { last = now; distRaf = requestAnimationFrame(f); return; }
+    const dt = Math.min(.1, (now - last) / 1000); last = now;
+    if (REC.disp == null) REC.disp = REC.dist;
+    const fresh = REC.running && REC.distAt && Date.now() - REC.distAt < 4000 && (REC.spd || 0) > .3;
+    const target = REC.dist + (fresh ? Math.min(REC.spd * (Date.now() - REC.distAt) / 1000, 12) : 0);
+    if (target > REC.disp) REC.disp += (target - REC.disp) * Math.min(1, dt * 5);
+    const t = km(REC.disp); if (el.textContent !== t) el.textContent = t;
+    distRaf = requestAnimationFrame(f);
+  };
+  distRaf = requestAnimationFrame(f);
 }
 async function setRecView(v) {
   if (v === 'map' && !S.online) { toast('Peta butuh internet. Rute tetap direkam'); return; }
@@ -733,7 +792,7 @@ SCREENS.record = {
   cls: 'full',
   render(p) {
     const type = REC ? REC.type : p.type || S.mode;
-    return '<div id="r-map" class="map3d" style="position:absolute;left:0;right:0;top:0;height:470px">' + map3d(REC ? REC.path : [], { live: true, plane: 'orbit' }) + '<div id="r-leaf" class="leaf"></div><div class="fadeb"></div></div>' +
+    return '<div id="r-map" class="map3d" style="position:absolute;left:0;right:0;top:0;height:470px">' + liveHtml() + '<div id="r-leaf" class="leaf"></div><div class="fadeb"></div></div>' +
       '<header class="row between" style="position:absolute;z-index:3;left:20px;right:20px;top:var(--top)"><button class="icbtn press" data-act="recStop" aria-label="Kembali">' + ic('back', 20) + '</button>' +
       '<span class="pill" style="height:36px;background:rgba(28,28,31,.88);backdrop-filter:blur(16px);font-size:12.5px"><span class="dot" id="r-gdot" style="background:#FFCC00"></span><span id="r-gtxt">' + type + ' · Mencari GPS…</span></span>' +
       '<button class="icbtn press" id="viewBtn" data-act="recView" aria-label="Ganti tampilan peta">' + ic('map', 20) + '</button></header>' +
@@ -744,7 +803,7 @@ SCREENS.record = {
       '<button class="press" data-act="lock" aria-label="Kunci layar" style="width:60px;height:60px;border-radius:50%;border:0;background:#1C1C1F;display:flex;align-items:center;justify-content:center;color:var(--txt)">' + ic('lock', 20) + '</button></div>';
   },
   mount(el, p) {
-    recView = '3d';
+    recView = '3d'; distLoop(); setTimeout(updateRecMap, 50);
     if (!REC && p.fresh) {
       p.fresh = false;
       ensureTrackPerms().then(ok => {
@@ -765,7 +824,7 @@ SCREENS.record = {
       });
     } else updateRecUI();
   },
-  unmount() { if (recLeaf) { recLeaf.m.remove(); recLeaf = null; } },
+  unmount() { cancelAnimationFrame(distRaf); if (recLeaf) { recLeaf.m.remove(); recLeaf = null; } },
   onBack() { if (REC) { exitSheet(); return true; } return false; }
 };
 
