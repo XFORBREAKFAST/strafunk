@@ -850,9 +850,16 @@ async function onAuth(u) {
 }
 async function fbRegister(name, username, mail, pass) {
   const f = await fbInit(); if (!f) throw new Error('Firebase belum siap');
-  const cr = await f.au.createUserWithEmailAndPassword(f.auth, mail, pass);
+  let cr;
+  try { cr = await f.au.createUserWithEmailAndPassword(f.auth, mail, pass); }
+  catch (e) {
+    if (!String(e && e.code).includes('email-already')) throw e;
+    cr = await f.au.signInWithEmailAndPassword(f.auth, mail, pass); // akun setengah jadi dari percobaan sebelumnya
+    const mine = await f.fs.getDoc(f.fs.doc(f.db, 'users', cr.user.uid));
+    if (mine.exists()) { await onAuth(cr.user); return; }
+  }
   const ex = await f.fs.getDocs(f.fs.query(f.fs.collection(f.db, 'users'), f.fs.where('username', '==', username)));
-  if (!ex.empty) { try { await cr.user.delete(); } catch (e) {} throw new Error('Username sudah dipakai, coba yang lain'); }
+  if (!ex.empty && ex.docs[0].id !== cr.user.uid) { try { await cr.user.delete(); } catch (e) {} throw new Error('Username sudah dipakai, coba yang lain'); }
   await f.au.updateProfile(cr.user, { displayName: name });
   await f.fs.setDoc(f.fs.doc(f.db, 'users', cr.user.uid), { name, username, following: [], createdAt: f.fs.serverTimestamp() });
   S.user = { uid: cr.user.uid, email: mail, name, username, following: [] }; store.set('user', S.user);
