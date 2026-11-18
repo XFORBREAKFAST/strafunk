@@ -817,6 +817,7 @@ function fbErr(e) {
   if (c.includes('weak-password')) return 'Password minimal 6 karakter';
   if (c.includes('invalid-email')) return 'Format email salah';
   if (c.includes('network')) return 'Koneksi bermasalah';
+  if (c.includes('permission-denied') || String(e && e.message).includes('insufficient permissions')) return 'Ditolak server. Cek Rules Firestore sudah di-Publish';
   return (e && e.message) || 'Gagal, coba lagi';
 }
 
@@ -849,9 +850,9 @@ async function onAuth(u) {
 }
 async function fbRegister(name, username, mail, pass) {
   const f = await fbInit(); if (!f) throw new Error('Firebase belum siap');
-  const ex = await f.fs.getDocs(f.fs.query(f.fs.collection(f.db, 'users'), f.fs.where('username', '==', username)));
-  if (!ex.empty) throw new Error('Username sudah dipakai');
   const cr = await f.au.createUserWithEmailAndPassword(f.auth, mail, pass);
+  const ex = await f.fs.getDocs(f.fs.query(f.fs.collection(f.db, 'users'), f.fs.where('username', '==', username)));
+  if (!ex.empty) { try { await cr.user.delete(); } catch (e) {} throw new Error('Username sudah dipakai, coba yang lain'); }
   await f.au.updateProfile(cr.user, { displayName: name });
   await f.fs.setDoc(f.fs.doc(f.db, 'users', cr.user.uid), { name, username, following: [], createdAt: f.fs.serverTimestamp() });
   S.user = { uid: cr.user.uid, email: mail, name, username, following: [] }; store.set('user', S.user);
