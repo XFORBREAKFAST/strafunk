@@ -1,0 +1,81 @@
+name: Build Strafunk APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: App icon & splash
+        run: |
+          npx @capacitor/assets generate --android \
+            --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' \
+            --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000' || echo "Icon generation skipped"
+
+      - name: Native code (step counter) & permissions
+        run: |
+          PKG=android/app/src/main/java/com/dzaky/strafunk
+          mkdir -p $PKG
+          cp native/StepCounterPlugin.java native/MainActivity.java $PKG/
+          python3 - <<'EOF'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p).read()
+          perms = ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'FOREGROUND_SERVICE',
+                   'FOREGROUND_SERVICE_LOCATION', 'POST_NOTIFICATIONS', 'ACTIVITY_RECOGNITION', 'WAKE_LOCK']
+          add = ''.join('    <uses-permission android:name="android.permission.%s" />\n' % x
+                        for x in perms if ('android.permission.' + x + '"') not in s)
+          add += '    <uses-feature android:name="android.hardware.location.gps" android:required="false" />\n'
+          add += '    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />\n'
+          s = s.replace('</manifest>', add + '</manifest>')
+          if 'screenOrientation' not in s:
+              s = s.replace('<activity', '<activity android:screenOrientation="portrait"', 1)
+          open(p, 'w').write(s)
+          print(s)
+          EOF
+
+      - name: Sync
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Strafunk.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Strafunk-APK
+          path: Strafunk.apk
+
+      - name: Publish ke Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Strafunk build ${{ github.run_number }}
+          files: Strafunk.apk
+          make_latest: true

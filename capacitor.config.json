@@ -1,0 +1,10 @@
+{
+  "appId": "com.dzaky.strafunk",
+  "appName": "Strafunk",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "android": {
+    "useLegacyBridge": true,
+    "backgroundColor": "#000000"
+  }
+}
