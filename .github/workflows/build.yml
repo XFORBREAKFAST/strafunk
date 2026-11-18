@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Bridge JS (capacitor.js)
+        run: cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor.js
+
       - name: Add Android platform
         run: npx cap add android
 

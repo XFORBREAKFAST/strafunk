@@ -154,6 +154,7 @@ a{color:inherit;text-decoration:none}
 <body>
 <div id="app"><div id="screens"></div><nav id="tabbar" class="hide" aria-label="Navigasi utama"></nav></div>
 
+<script src="capacitor.js"></script>
 <script>
 'use strict';
 /* =========================== util =========================== */
@@ -513,7 +514,7 @@ function onLoc(loc) {
   if (!REC) return;
   REC.acc = loc.accuracy; REC.gotFix = true;
   if (!REC.running) { REC.lastPt = null; return; }
-  if (loc.accuracy > 35) return;
+  if (loc.accuracy > 50) return;
   const pt = [loc.latitude, loc.longitude, loc.time || Date.now()];
   if (REC.lastPt) {
     const d = hav(REC.lastPt, pt), dt = (pt[2] - REC.lastPt[2]) / 1000;
@@ -579,8 +580,9 @@ function finishRec(save) {
 function gpsLabel() {
   if (!REC) return '';
   if (!REC.gotFix) return ['#FFCC00', 'Mencari GPS…'];
+  if (REC.acc) REC.accTxt = ' ±' + Math.round(REC.acc) + 'm';
   if (REC.acc > 35 || Date.now() - REC.lastGood > 15000) return ['#FF9F0A', REC.type === 'Sepeda' ? 'GPS lemah' : 'GPS lemah · pakai langkah'];
-  return ['#30D158', 'GPS kuat'];
+  return ['#30D158', 'GPS kuat' + (REC.accTxt || '')];
 }
 function updateRecUI() {
   const lk = $('#liveKm'); if (lk && REC) lk.textContent = km(REC.dist);
