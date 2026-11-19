@@ -51,7 +51,7 @@ private class MapHolder(val map: MapView, val glow: Polyline, val line: Polyline
 
 /** Peta asli (OpenStreetMap, versi gelap). live = kamera ngikutin titik terakhir. */
 @Composable
-fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modifier = Modifier) {
+fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modifier = Modifier, here: DoubleArray? = null) {
     val ctx = LocalContext.current
     val h = remember {
         val mv = MapView(ctx).apply {
@@ -73,7 +73,12 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
     }
     DisposableEffect(Unit) { h.map.onResume(); onDispose { h.map.onPause(); h.map.onDetach() } }
     AndroidView(factory = { h.map }, modifier = modifier, update = {
-        if (h.lastVer != pathVer || h.first) {
+        if (path.isEmpty() && here != null) {
+            val g = GeoPoint(here[0], here[1]); h.me.position = g
+            if (h.first) h.map.controller.setCenter(g) else h.map.controller.animateTo(g)
+            h.first = false; h.map.invalidate()
+        }
+        if (path.isNotEmpty() && (h.lastVer != pathVer || h.first)) {
             h.lastVer = pathVer
             val pts = path.map { GeoPoint(it[0], it[1]) }
             h.glow.setPoints(pts); h.line.setPoints(pts)

@@ -79,6 +79,13 @@ object Store {
         try { actsFile.writeText(a.toString()) } catch (e: Exception) { }
     }
 
+    /** gabung aktivitas dari cloud (yang belum ada di HP) */
+    fun mergeActs(list: List<Act>) {
+        val have = acts.value.map { it.id }.toHashSet()
+        val add = list.filter { it.id !in have }
+        if (add.isEmpty()) return
+        acts.value = (acts.value + add).sortedByDescending { it.start }; saveActs()
+    }
     fun addAct(a: Act) { acts.value = listOf(a) + acts.value; saveActs() }
     fun updateAct(a: Act) { acts.value = acts.value.map { if (it.id == a.id) a else it }; saveActs() }
     fun deleteAct(id: String) { acts.value = acts.value.filter { it.id != id }; saveActs() }

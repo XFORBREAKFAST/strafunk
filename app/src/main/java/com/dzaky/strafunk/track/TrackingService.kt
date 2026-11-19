@@ -51,7 +51,10 @@ data class TrackSnap(
     val spd: Double = 0.0,
     val distAt: Long = 0,
     val splits: List<Int> = emptyList(),
-    val pathVer: Int = 0
+    val pathVer: Int = 0,
+    val lat: Double = Double.NaN,
+    val lng: Double = Double.NaN,
+    val provider: String = ""
 )
 
 /** Hasil akhir saat rekaman dihentikan. */
@@ -123,6 +126,7 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         private val splits = ArrayList<Int>()
         private var kLat = 0.0; private var kLng = 0.0; private var kVar = -1.0; private var kT = 0L; private var spdS = 0.0
         private var pathVer = 0
+        private var curLat = Double.NaN; private var curLng = Double.NaN; private var curProv = ""
 
         fun elapsedMs(): Long {
             if (startRt == 0L) return 0
@@ -132,7 +136,7 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
 
         private fun publish() {
             Track.snap.value = TrackSnap(active, running, type, dist, steps, elapsedMs(), System.currentTimeMillis(), acc, gotFix, est,
-                lastGood, spdS, distAt, ArrayList(splits), pathVer)
+                lastGood, spdS, distAt, ArrayList(splits), pathVer, curLat, curLng, curProv)
         }
     }
 
@@ -140,6 +144,8 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
     private var sm: SensorManager? = null
     private val h = Handler(Looper.getMainLooper())
     private var tickN = 0
+    private var useFused = false
+    private var lastPtTime = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -162,6 +168,7 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         dist = 0.0; steps = 0; acc = -1f; gotFix = false; est = false
         synchronized(Track.path) { Track.path.clear() }
         splits.clear(); lastLat = Double.NaN; lastStep = -1.0; kmNext = 1000; lastGood = 0; kVar = -1.0; spdS = 0.0; distAt = 0; pathVer = 0
+        curLat = Double.NaN; curLng = Double.NaN; curProv = ""
         startRt = SystemClock.elapsedRealtime(); startWall = System.currentTimeMillis(); pausedTotal = 0; pausedAt = 0
         running = true; active = true
 
@@ -173,8 +180,18 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
             try { startForeground(NID, build()) } catch (_: Exception) { }
         }
 
-        lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        try { lm?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper()) } catch (_: Exception) { }
+        val m = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        lm = m
+        // posisi awal dari cache (biar peta langsung ke lokasi kamu)
+        for (p in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+            try { m.getLastKnownLocation(p)?.let { if (System.currentTimeMillis() - it.time < 10 * 60_000 && curLat.isNaN()) { curLat = it.latitude; curLng = it.longitude; curProv = "cache" } } } catch (_: Exception) { }
+        }
+        // fused (GPS + WiFi + seluler) kalau ada → kunci posisi jauh lebih cepat
+        val fused = Build.VERSION.SDK_INT >= 31 && m.allProviders.contains(LocationManager.FUSED_PROVIDER)
+        if (fused) try { m.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 0f, this, Looper.getMainLooper()) } catch (_: Exception) { }
+        try { m.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper()) } catch (_: Exception) { }
+        if (!fused) try { m.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 0f, this, Looper.getMainLooper()) } catch (_: Exception) { }
+        useFused = fused
 
         sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         sm?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)?.let { s ->
@@ -217,11 +234,20 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
     private fun maxSpeed() = when (type) { "Jalan" -> 4.5; "Sepeda" -> 25.0; else -> 9.0 }
 
     override fun onLocationChanged(l: Location) {
-        acc = if (l.hasAccuracy()) l.accuracy else -1f
+        val prov = l.provider ?: ""
+        // posisi & akurasi buat tampilan (semua sumber)
+        if (!(prov == LocationManager.NETWORK_PROVIDER && gotFix && acc in 0f..50f)) {
+            acc = if (l.hasAccuracy()) l.accuracy else -1f
+            curLat = l.latitude; curLng = l.longitude; curProv = prov
+        }
         gotFix = true
-        if (!running) { lastLat = Double.NaN; kVar = -1.0; return }
-        if (l.hasAccuracy() && l.accuracy > 50) return
+        if (!running) { lastLat = Double.NaN; kVar = -1.0; publish(); return }
+        // jarak: hanya dari sumber akurat; pakai fused kalau ada, GPS murni sebagai cadangan
+        if (prov == LocationManager.NETWORK_PROVIDER) { publish(); return }
         val t = System.currentTimeMillis()
+        if (useFused && prov == LocationManager.GPS_PROVIDER && t - lastPtTime < 2500) return
+        if (l.hasAccuracy() && l.accuracy > 50) { publish(); return }
+        lastPtTime = t
         val a = maxOf(if (l.hasAccuracy()) l.accuracy.toDouble() else 10.0, 3.0)
         val q = if (type == "Sepeda") 8.0 else 3.0
         if (kVar < 0) { kLat = l.latitude; kLng = l.longitude; kVar = a * a; kT = t }

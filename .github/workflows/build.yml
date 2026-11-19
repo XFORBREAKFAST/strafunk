@@ -31,6 +31,9 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk Strafunk.apk
 
+      - name: Cek tanda tangan (harus kunci tetap)
+        run: python3 tools/apkcert.py Strafunk.apk 941691fc3e8c26de6945d3f7
+
       - uses: actions/upload-artifact@v4
         with:
           name: Strafunk-APK

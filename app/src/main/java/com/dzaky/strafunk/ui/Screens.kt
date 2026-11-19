@@ -597,8 +597,11 @@ fun RecordScreen(s: Scr.Record) {
     val (gc, gt) = when {
         !snap.active -> C.Yellow to "Siap"
         !snap.running -> C.Mut to "Dijeda"
-        !snap.fix -> C.Yellow to "Mencari GPS…"
-        snap.acc > 50 || now - snap.lastGood > 15000 -> Color(0xFFFF9F0A) to (if (bike) "GPS lemah" else "GPS lemah · pakai langkah")
+        !snap.fix -> C.Yellow to (if (!snap.lat.isNaN()) "Mengunci GPS…" else "Mencari GPS…")
+        snap.acc > 50 -> Color(0xFFFF9F0A) to "Sinyal lemah ±${snap.acc.roundToInt()}m · cari tempat terbuka"
+        now - snap.lastGood > 15000 && snap.lastGood > 0 -> Color(0xFFFF9F0A) to (if (bike) "GPS lemah" else "GPS lemah · pakai langkah")
+        snap.lastGood == 0L -> C.Green to "GPS ±${snap.acc.roundToInt()}m · mulai gerak"
+
         else -> C.Green to "GPS kuat ±${snap.acc.roundToInt()}m"
     }
 
@@ -606,7 +609,7 @@ fun RecordScreen(s: Scr.Record) {
         Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxWidth().height(470.dp))
         AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
             Box(Modifier.fillMaxWidth().height(470.dp)) {
-                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize())
+                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize(), here = if (snap.lat.isNaN()) null else doubleArrayOf(snap.lat, snap.lng))
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
             }
         }

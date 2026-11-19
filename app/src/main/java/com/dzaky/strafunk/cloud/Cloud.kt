@@ -61,7 +61,7 @@ object Cloud {
             auth.addAuthStateListener { a ->
                 val u = a.currentUser
                 if (u == null) user.value = null
-                else scope.launch { loadProfile(u.uid, u.displayName); sync(false) }
+                else scope.launch { loadProfile(u.uid, u.displayName); pullMine(); sync(false) }
             }
         } catch (e: Exception) { ok = false }
     }
@@ -147,6 +147,15 @@ object Cloud {
             }
             true
         } catch (e: Exception) { false } finally { syncing.value = false }
+    }
+
+    /** tarik aktivitas milik sendiri dari cloud ke HP (misal habis install ulang) */
+    suspend fun pullMine() {
+        val u = uid ?: return
+        try {
+            val r = db.collection("activities").whereEqualTo("uid", u).get().await()
+            Store.mergeActs(r.documents.mapNotNull { d -> d.data?.let { toRAct(it)?.act } })
+        } catch (_: Exception) { }
     }
 
     fun deleteRemote(id: String) { if (uid != null) db.collection("activities").document(id).delete() }
