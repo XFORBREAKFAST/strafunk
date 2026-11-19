@@ -28,9 +28,9 @@ class MainActivity : ComponentActivity() {
 
     /** Tombol "Selesai" di notifikasi membuka app dengan extra sf_action=finish. */
     private fun handle(i: Intent?) {
-        if (i?.getStringExtra("sf_action") == "finish") {
-            i.removeExtra("sf_action")
-            Bus.finishReq.value = true
+        when (i?.getStringExtra("sf_action")) {
+            "finish" -> { i.removeExtra("sf_action"); Bus.finishReq.value = true }
+            "record" -> { i.removeExtra("sf_action"); Bus.openRecordReq.value = true }
         }
     }
 }

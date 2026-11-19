@@ -108,6 +108,18 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
             })
         }
 
+        /** pop-up event (battle, permintaan gabung) */
+        fun notifyEvent(ctx: Context, title: String, text: String) {
+            ensureChannels(ctx)
+            val i = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("sf_action", "record")
+            val pi = PendingIntent.getActivity(ctx, 21, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val n = NotificationCompat.Builder(ctx, CH_KM).setSmallIcon(R.drawable.sf_ic_notif).setColor(0xFFC5F82A.toInt())
+                .setContentTitle(title).setContentText(text).setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_SOCIAL).setAutoCancel(true).setTimeoutAfter(8000).setContentIntent(pi).build()
+            try { ctx.getSystemService(NotificationManager::class.java)?.notify(NID + 200 + (title.hashCode() and 0xff), n) } catch (_: Exception) { }
+        }
+
         // ---- state ----
         @Volatile var active = false; private set
         private var running = false

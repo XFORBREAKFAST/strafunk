@@ -127,7 +127,8 @@ object Cloud {
         "id" to a.id, "uid" to uid, "userName" to name, "type" to a.type, "title" to a.title, "start" to a.start,
         "duration" to a.duration, "distance" to a.distance, "steps" to a.steps, "kcal" to a.kcal, "splits" to a.splits,
         "est" to a.est, "week" to Fmt.key(Fmt.monday(a.date)), "month" to a.date.toString().substring(0, 7),
-        "path" to a.path.map { mapOf("a" to it[0], "o" to it[1]) }
+        "path" to a.path.map { mapOf("a" to it[0], "o" to it[1]) },
+        "battle" to a.battle
     )
 
     suspend fun sync(force: Boolean): Boolean {
@@ -187,7 +188,8 @@ object Cloud {
         val path = (m["path"] as? List<Map<String, Any?>>)?.map { doubleArrayOf((it["a"] as Number).toDouble(), (it["o"] as Number).toDouble()) } ?: emptyList()
         val a = Act(m["id"] as String, m["type"] as? String ?: "Lari", m["title"] as? String ?: "Aktivitas", (m["start"] as Number).toLong(),
             (m["duration"] as? Number)?.toInt() ?: 0, (m["distance"] as? Number)?.toDouble() ?: 0.0, (m["steps"] as? Number)?.toLong() ?: 0,
-            (m["kcal"] as? Number)?.toInt() ?: 0, (m["splits"] as? List<Number>)?.map { it.toInt() } ?: emptyList(), m["est"] as? Boolean ?: false, path, true)
+            (m["kcal"] as? Number)?.toInt() ?: 0, (m["splits"] as? List<Number>)?.map { it.toInt() } ?: emptyList(), m["est"] as? Boolean ?: false, path, true,
+            (m["battle"] as? List<String>) ?: emptyList())
         RAct(a, m["uid"] as String, m["userName"] as? String ?: "?", (m["kudos"] as? List<String>) ?: emptyList())
     } catch (e: Exception) { null }
 

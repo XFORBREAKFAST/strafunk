@@ -105,6 +105,7 @@ object C {
 object Bus {
     val toast = MutableStateFlow<Pair<String, Long>?>(null)
     val finishReq = MutableStateFlow(false)
+    val openRecordReq = MutableStateFlow(false)
     fun toast(msg: String) { toast.value = msg to System.nanoTime() }
 }
 
@@ -261,9 +262,9 @@ fun ToastHost() {
 /* ============================ geometri rute ============================ */
 object Geo {
     /** lat/lng → meter (x timur, y selatan) relatif ke titik pertama. */
-    fun meters(path: List<DoubleArray>): List<FloatArray> {
+    fun meters(path: List<DoubleArray>, origin: DoubleArray? = null): List<FloatArray> {
         if (path.isEmpty()) return emptyList()
-        val o = path[0]; val c = cos(Math.toRadians(o[0]))
+        val o = origin ?: path[0]; val c = cos(Math.toRadians(o[0]))
         return path.map { floatArrayOf(((it[1] - o[1]) * c * 111320).toFloat(), (-(it[0] - o[0]) * 110540).toFloat()) }
     }
 
@@ -322,7 +323,8 @@ private val EaseDraw = CubicBezierEasing(.45f, 0f, .2f, 1f)
  * live=false → mode replay: kamera berputar + garis tergambar dari start ke finish.
  */
 @Composable
-fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean, replayKey: Int, modifier: Modifier = Modifier) {
+fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean, replayKey: Int, modifier: Modifier = Modifier,
+            others: List<Pair<List<DoubleArray>, Color>> = emptyList()) {
     BoxWithConstraints(modifier.clipToBounds().background(Brush.radialGradient(listOf(Color(0xFF10140A), Color.Black)))) {
         val density = LocalDensity.current
         val planeDp = maxWidth * 1.45f
@@ -340,7 +342,9 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
         }
         // ---- live: skala tetap, kamera ikut ----
         val scale = planePx / (if (bike) 1500f else 450f)
-        val meters = remember(pathVer, path.size) { Geo.meters(Fmt.downsample(path, 900)) }
+        val origin = path.firstOrNull() ?: others.firstOrNull { it.first.isNotEmpty() }?.first?.firstOrNull()
+        val meters = remember(pathVer, path.size, origin) { Geo.meters(Fmt.downsample(path, 900), origin) }
+        val otherPaths = others.map { (p, c) -> val m = Geo.meters(p, origin); Triple(Geo.smooth(m.map { floatArrayOf(it[0] * scale, it[1] * scale) }), c, m.lastOrNull()?.let { Offset(it[0] * scale, it[1] * scale) }) }
         val livePath = remember(pathVer, path.size, scale) { Geo.smooth(meters.map { floatArrayOf(it[0] * scale, it[1] * scale) }) }
         val cur = meters.lastOrNull()?.let { Offset(it[0] * scale, it[1] * scale) } ?: Offset.Zero
         val tr = remember { Animatable(Offset(planePx / 2, planePx / 2) - cur, Offset.VectorConverter) }
@@ -370,6 +374,11 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
             val lime = C.Lime
             if (live) {
                 translate(tr.value.x, tr.value.y) {
+                    otherPaths.forEach { (op, oc, last) ->
+                        drawPath(op, oc.copy(alpha = .22f), style = Stroke(20f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(op, oc, style = Stroke(7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        if (last != null) { drawCircle(Color.White, 12f, last); drawCircle(oc, 8.5f, last) }
+                    }
                     if (meters.size > 1) {
                         drawPath(livePath, lime.copy(alpha = .14f), style = Stroke(34f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                         drawPath(livePath, lime.copy(alpha = .22f), style = Stroke(22f, cap = StrokeCap.Round, join = StrokeJoin.Round))

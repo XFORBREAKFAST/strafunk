@@ -71,6 +71,8 @@ import com.dzaky.strafunk.Net
 import com.dzaky.strafunk.Story
 import com.dzaky.strafunk.Updater
 import com.dzaky.strafunk.cloud.Cloud
+import com.dzaky.strafunk.cloud.Live
+import com.dzaky.strafunk.cloud.LiveRun
 import com.dzaky.strafunk.data.Act
 import com.dzaky.strafunk.data.Fmt
 import com.dzaky.strafunk.data.Store
@@ -154,6 +156,17 @@ fun StrafunkApp(act: ComponentActivity) {
         }
     }
     LaunchedEffect(Unit) { delay(2500); checkUpdate(ctx, false) }
+    val openRec by Bus.openRecordReq.collectAsState()
+    LaunchedEffect(openRec) { if (openRec) { Bus.openRecordReq.value = false; if (TrackingService.active && Nav.cur !is Scr.Record) Nav.push(Scr.Record(Track.snap.value.type, false)) } }
+    LaunchedEffect(Unit) {
+        Live.accepted.collect { h ->
+            Sheet.open {
+                SheetTitle("${h.name} nerima kamu 🎉", "Mulai ${h.type.lowercase()} sekarang? Battle dihitung sejak kamu mulai.")
+                Btn("Mulai sekarang", icon = Icons.Rounded.PlayArrow) { Sheet.close(); Live.pendingJoin = h; Ui.mode = h.type; Nav.push(Scr.Record(h.type, true)) }
+                Btn("Nanti", BK.Ghost) { Sheet.close() }
+            }
+        }
+    }
     val online by Net.online.collectAsState()
     LaunchedEffect(online) { if (online) Cloud.sync(false) }
     val owner = LocalLifecycleOwner.current
@@ -441,12 +454,14 @@ fun HomeScreen() {
                 if (isToday) {
                     CardBox(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (!snap.active) VisToggle()
                             Seg(listOf("Jalan", "Lari", "Sepeda"), Ui.mode) { Ui.mode = it }
                             Btn(if (snap.active) "Buka rekaman" else "Mulai ${Ui.mode}", icon = Icons.Rounded.PlayArrow) { openRecord() }
                         }
                     }
                 } else Btn("Balik ke hari ini", BK.Dark) { sel = today.toString() }
             }
+            if (selD == today && !snap.active) NearbySection()
             if (selD == today && acts.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     T("Aktivitas terakhir", 17, FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -501,6 +516,7 @@ fun exitSheet(ctx: Context) {
 
 fun finishRec(ctx: Context, save: Boolean) {
     val r = TrackingService.stop(ctx)
+    val battle = if (Live.session.value != null) Live.stopRun() else emptyList()
     if (!save) { Bus.toast("Aktivitas dibuang"); leaveRecord(); return }
     val s = r.snap; val sec = (s.elapsedMs / 1000).toInt()
     if (s.dist < 20 && sec < 30) { Bus.toast("Terlalu pendek, nggak disimpan"); leaveRecord(); return }
@@ -510,11 +526,12 @@ fun finishRec(ctx: Context, save: Boolean) {
         start = r.startWall, duration = sec, distance = s.dist,
         steps = if (s.steps > 0) s.steps else if (s.type == "Sepeda") 0 else (s.dist * 100 / Store.stride).toLong(),
         kcal = Fmt.kcal(s.type, s.dist, sec.toDouble(), Store.weight), splits = s.splits, est = s.est,
-        path = Fmt.downsample(r.path, 600)
+        path = Fmt.downsample(r.path, 600), battle = battle
     )
     Store.addAct(a); Sfx.play(Sfx.SUCCESS)
     Ui.scope.launch { Cloud.sync(false) }
     Nav.replace(Scr.Detail(a.id, true))
+    battle.firstOrNull()?.let { Ui.scope.launch { delay(1200); Bus.toast("Battle: $it") } }
 }
 
 @Composable
@@ -567,7 +584,7 @@ fun RecordScreen(s: Scr.Record) {
         for (i in 0..3) {
             count = i; Sfx.play(if (i < 3) Sfx.TICK else Sfx.GO)
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            if (i == 3) TrackingService.start(ctx, s.type, Store.stride, Store.weight)
+            if (i == 3) { TrackingService.start(ctx, s.type, Store.stride, Store.weight); if (Cloud.uid != null) Live.startRun(ctx, s.type) }
             delay(800)
         }
         count = -1
@@ -593,6 +610,14 @@ fun RecordScreen(s: Scr.Record) {
     val sec = elapsed / 1000.0
     val path = remember(snap.pathVer, snap.active) { Track.pathCopy() }
     var map by remember { mutableStateOf(false) }
+    val rivals by Live.rivals.collectAsState()
+    val reqs by Live.requests.collectAsState()
+    val sess by Live.session.collectAsState()
+    val host by Live.hostRun.collectAsState()
+    val vis by Live.vis.collectAsState()
+    LaunchedEffect(snap.dist, snap.steps) { Live.tick() }
+    val battle = rivals.isNotEmpty()
+    val topH = if (battle) 360.dp else 470.dp
 
     val (gc, gt) = when {
         !snap.active -> C.Yellow to "Siap"
@@ -606,10 +631,12 @@ fun RecordScreen(s: Scr.Record) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxWidth().height(470.dp))
+        Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxWidth().height(topH),
+            others = rivals.map { it.path to Color(it.color) })
         AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
-            Box(Modifier.fillMaxWidth().height(470.dp)) {
-                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize(), here = if (snap.lat.isNaN()) null else doubleArrayOf(snap.lat, snap.lng))
+            Box(Modifier.fillMaxWidth().height(topH)) {
+                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize(), here = if (snap.lat.isNaN()) null else doubleArrayOf(snap.lat, snap.lng),
+                    others = rivals.map { it.path to it.color })
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
             }
         }
@@ -621,9 +648,38 @@ fun RecordScreen(s: Scr.Record) {
                 if (!map && !online) Bus.toast("Peta asli butuh internet. Rute tetap direkam") else map = !map
             }
         }
-        Column(Modifier.fillMaxWidth().padding(top = 430.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+        // chip public/private + permintaan gabung
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(top = 68.dp, start = 20.dp, end = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (snap.active && sess != null) {
+                val me = Cloud.uid
+                if (sess == me) {
+                    Row(Modifier.press { Live.setVis(if (vis == "public") "private" else "public"); Bus.toast(if (vis == "public") "Private: cuma teman yang bisa minta gabung" else "Public: orang sekitar bisa lihat & gabung") }
+                        .clip(RoundedCornerShape(50)).background(if (vis == "public") C.Lime.copy(alpha = .16f) else Color(0xE0161618)).padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (vis == "public") Icons.Rounded.Public else Icons.Rounded.Lock, null, tint = if (vis == "public") C.Lime else C.Mut2, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp)); T(if (vis == "public") "Public · bisa digabung" else "Private", 12, FontWeight.SemiBold, if (vis == "public") C.Lime else C.Mut2)
+                    }
+                } else Row(Modifier.clip(RoundedCornerShape(50)).background(C.Lime.copy(alpha = .16f)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Bolt, null, tint = C.Lime, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp))
+                    T("Battle bareng ${host?.name ?: "…"}", 12, FontWeight.SemiBold, C.Lime)
+                }
+            }
+            reqs.forEach { (uid, name) ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF21C1C1F)).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(34.dp).clip(CircleShape).background(C.Card3), contentAlignment = Alignment.Center) { T(Fmt.initials(name), 12, FontWeight.Bold) }
+                    Spacer(Modifier.width(10.dp))
+                    T("$name minta gabung", 14, FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                    Box(Modifier.press { Live.reject(uid) }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Tolak", 13, FontWeight.SemiBold) }
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.press { Live.accept(uid); Sfx.play(Sfx.SUCCESS) }.clip(RoundedCornerShape(50)).background(C.Lime).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Terima", 13, FontWeight.Bold, C.Ink) }
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(top = if (battle) 320.dp else 430.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(if (battle) 14.dp else 22.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-                T(Fmt.km(disp), 92, FontWeight.ExtraBold, spacing = -5f)
+                T(Fmt.km(disp), if (battle) 72 else 92, FontWeight.ExtraBold, spacing = if (battle) -4f else -5f)
                 Spacer(Modifier.width(8.dp)); T("km", 18, FontWeight.SemiBold, C.Mut, Modifier.padding(bottom = 18.dp))
             }
             Stat3(listOf(
@@ -631,6 +687,7 @@ fun RecordScreen(s: Scr.Record) {
                 (if (bike) "km/jam" else "Pace /km") to (if (bike) Fmt.speed(snap.dist, sec) else Fmt.pace(if (snap.dist > 30) sec / (snap.dist / 1000) else Double.NaN)),
                 (if (bike) "Kalori" else "Langkah") to (if (bike) Fmt.num(Fmt.kcal(type, snap.dist, sec, Store.weight)) else Fmt.num(snap.steps))
             ))
+            AnimatedVisibility(battle, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { BattlePanel(rivals, bike) }
         }
         Row(Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -739,6 +796,12 @@ fun DetailScreen(s: Scr.Detail, remote: Boolean = false) {
                             }
                         }
                     }
+                }
+            }
+            if (a.battle.isNotEmpty()) CardBox(Modifier.fillMaxWidth(), radius = 24.dp) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Bolt, null, tint = C.Lime, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); T("Hasil battle", 15, FontWeight.Bold) }
+                    a.battle.forEach { T(it, 14, FontWeight.SemiBold, if (it.startsWith("Menang")) C.Lime else C.Mut2) }
                 }
             }
             if (a.est) T("Sebagian jarak diperkirakan dari langkah karena GPS lemah.", 12, color = C.Mut, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())

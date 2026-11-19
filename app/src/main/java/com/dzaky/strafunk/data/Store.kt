@@ -23,14 +23,15 @@ data class Act(
     val splits: List<Int>,
     val est: Boolean,
     val path: List<DoubleArray>,
-    val synced: Boolean = false
+    val synced: Boolean = false,
+    val battle: List<String> = emptyList()
 ) {
     val date: LocalDate get() = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("type", type); put("title", title); put("start", start)
         put("duration", duration); put("distance", distance); put("steps", steps); put("kcal", kcal)
-        put("splits", JSONArray(splits)); put("est", est); put("synced", synced)
+        put("splits", JSONArray(splits)); put("est", est); put("synced", synced); put("battle", JSONArray(battle))
         val p = JSONArray()
         path.forEach { p.put(JSONArray().put(it[0]).put(it[1])) }
         put("path", p)
@@ -46,7 +47,8 @@ data class Act(
                 steps = o.optLong("steps"), kcal = o.optInt("kcal"),
                 splits = List(sp.length()) { sp.getInt(it) }, est = o.optBoolean("est"),
                 path = List(pa.length()) { val q = pa.getJSONArray(it); doubleArrayOf(q.getDouble(0), q.getDouble(1)) },
-                synced = o.optBoolean("synced")
+                synced = o.optBoolean("synced"),
+                battle = o.optJSONArray("battle")?.let { b -> List(b.length()) { b.getString(it) } } ?: emptyList()
             )
         }
     }

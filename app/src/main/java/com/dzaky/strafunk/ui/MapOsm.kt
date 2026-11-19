@@ -47,11 +47,12 @@ object Osm {
     }
 }
 
-private class MapHolder(val map: MapView, val glow: Polyline, val line: Polyline, val me: Marker) { var lastVer = -1; var first = true }
+private class MapHolder(val map: MapView, val glow: Polyline, val line: Polyline, val me: Marker) { var lastVer = -1; var first = true; val rivals = ArrayList<org.osmdroid.views.overlay.Overlay>(); var rivalKey = "" }
 
 /** Peta asli (OpenStreetMap, versi gelap). live = kamera ngikutin titik terakhir. */
 @Composable
-fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modifier = Modifier, here: DoubleArray? = null) {
+fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modifier = Modifier, here: DoubleArray? = null,
+           others: List<Pair<List<DoubleArray>, Long>> = emptyList()) {
     val ctx = LocalContext.current
     val h = remember {
         val mv = MapView(ctx).apply {
@@ -73,6 +74,18 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
     }
     DisposableEffect(Unit) { h.map.onResume(); onDispose { h.map.onPause(); h.map.onDetach() } }
     AndroidView(factory = { h.map }, modifier = modifier, update = {
+        val rk = others.joinToString { "${it.first.size}:${it.first.lastOrNull()?.get(0)}" }
+        if (rk != h.rivalKey) {
+            h.rivalKey = rk
+            h.map.overlays.removeAll(h.rivals.toSet()); h.rivals.clear()
+            others.forEach { (p, col) ->
+                if (p.isEmpty()) return@forEach
+                val pl = Polyline(h.map).apply { outlinePaint.color = col.toInt(); outlinePaint.strokeWidth = 9f; outlinePaint.strokeCap = Paint.Cap.ROUND; setPoints(p.map { GeoPoint(it[0], it[1]) }) }
+                val mk = Marker(h.map).apply { icon = Osm.dot(ctx, 28).also { d -> d.setTint(col.toInt()) }; setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null); position = GeoPoint(p.last()[0], p.last()[1]) }
+                h.map.overlays.add(0, pl); h.map.overlays.add(mk); h.rivals += pl; h.rivals += mk
+            }
+            h.map.invalidate()
+        }
         if (path.isEmpty() && here != null) {
             val g = GeoPoint(here[0], here[1]); h.me.position = g
             if (h.first) h.map.controller.setCenter(g) else h.map.controller.animateTo(g)
