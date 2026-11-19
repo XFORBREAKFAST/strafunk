@@ -1,9 +1,0 @@
-{
-  "appId": "com.dzaky.strafunk",
-  "appName": "Strafunk",
-  "webDir": "www",
-  "backgroundColor": "#000000",
-  "android": {
-    "backgroundColor": "#000000"
-  }
-}

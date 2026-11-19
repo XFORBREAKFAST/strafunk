@@ -1,0 +1,2 @@
+-keep class com.dzaky.strafunk.track.TrackingService { *; }
+-dontwarn org.osmdroid.**
