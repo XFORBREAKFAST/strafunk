@@ -62,7 +62,7 @@ object Updater {
 
     suspend fun latest(): Info? = withContext(Dispatchers.IO) {
         try {
-            val c = URL("https://api.github.com/repos/XFORBREAKFAST/strafunk/releases?per_page=8").openConnection() as HttpURLConnection
+            val c = URL("https://api.github.com/repos/XFORBREAKFAST/strafunk/releases?per_page=60").openConnection() as HttpURLConnection
             c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Accept", "application/vnd.github+json")
             val arr = JSONArray(c.inputStream.bufferedReader().readText())
