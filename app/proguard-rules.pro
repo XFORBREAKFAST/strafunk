@@ -1,2 +1,4 @@
 -keep class com.dzaky.strafunk.track.TrackingService { *; }
 -dontwarn org.osmdroid.**
+-keep class org.osmdroid.** { *; }
+-dontwarn com.google.android.gms.**

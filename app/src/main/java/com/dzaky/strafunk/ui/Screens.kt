@@ -70,6 +70,7 @@ import com.dzaky.strafunk.BuildConfig
 import com.dzaky.strafunk.Net
 import com.dzaky.strafunk.Story
 import com.dzaky.strafunk.Updater
+import com.dzaky.strafunk.cloud.Cloud
 import com.dzaky.strafunk.data.Act
 import com.dzaky.strafunk.data.Fmt
 import com.dzaky.strafunk.data.Store
@@ -97,6 +98,8 @@ sealed class Scr(val tab: Boolean) {
     data class Record(val type: String, val fresh: Boolean) : Scr(false)
     data class Detail(val id: String, val fresh: Boolean = false) : Scr(false)
     data object History : Scr(false)
+    data object Auth : Scr(false)
+    data class Remote(val id: String) : Scr(false)
 }
 
 object Nav {
@@ -151,9 +154,11 @@ fun StrafunkApp(act: ComponentActivity) {
         }
     }
     LaunchedEffect(Unit) { delay(2500); checkUpdate(ctx, false) }
+    val online by Net.online.collectAsState()
+    LaunchedEffect(online) { if (online) Cloud.sync(false) }
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
-        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) Ui.scope.launch { refreshWeek(ctx, Fmt.monday(LocalDate.now())) } }
+        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) Ui.scope.launch { refreshWeek(ctx, Fmt.monday(LocalDate.now())); Cloud.sync(false) } }
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
@@ -171,8 +176,10 @@ fun StrafunkApp(act: ComponentActivity) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 when (s) {
                     Scr.Home -> HomeScreen()
-                    Scr.Feed -> SoonScreen("Feed", "Feed teman lagi dipindah ke versi native. Hadir di update berikutnya bareng login & sinkron.")
-                    Scr.Ranking -> SoonScreen("Ranking", "Ranking & duel mingguan lagi dipindah ke versi native. Hadir di update berikutnya.")
+                    Scr.Feed -> FeedScreen()
+                    Scr.Ranking -> RankingScreen()
+                    Scr.Auth -> AuthScreen()
+                    is Scr.Remote -> DetailScreen(Scr.Detail(s.id), remote = true)
                     Scr.Profile -> ProfileScreen()
                     Scr.History -> HistoryScreen()
                     is Scr.Record -> RecordScreen(s)
@@ -506,6 +513,7 @@ fun finishRec(ctx: Context, save: Boolean) {
         path = Fmt.downsample(r.path, 600)
     )
     Store.addAct(a); Sfx.play(Sfx.SUCCESS)
+    Ui.scope.launch { Cloud.sync(false) }
     Nav.replace(Scr.Detail(a.id, true))
 }
 
@@ -584,6 +592,7 @@ fun RecordScreen(s: Scr.Record) {
     val elapsed = snap.elapsedMs + if (snap.active && snap.running) (now - snap.at).coerceAtLeast(0) else 0
     val sec = elapsed / 1000.0
     val path = remember(snap.pathVer, snap.active) { Track.pathCopy() }
+    var map by remember { mutableStateOf(false) }
 
     val (gc, gt) = when {
         !snap.active -> C.Yellow to "Siap"
@@ -595,11 +604,19 @@ fun RecordScreen(s: Scr.Record) {
 
     Box(Modifier.fillMaxSize()) {
         Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxWidth().height(470.dp))
+        AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
+            Box(Modifier.fillMaxWidth().height(470.dp)) {
+                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize())
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+            }
+        }
         Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { if (TrackingService.active) exitSheet(ctx) else leaveRecord() }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Pill("$type · $gt · " + if (online) "Online" else "Offline", gc) }
-            Spacer(Modifier.size(44.dp))
+            CircleBtn(if (map) Icons.Rounded.ViewInAr else Icons.Rounded.Map, "Ganti tampilan peta") {
+                if (!map && !online) Bus.toast("Peta asli butuh internet. Rute tetap direkam") else map = !map
+            }
         }
         Column(Modifier.fillMaxWidth().padding(top = 430.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
@@ -664,11 +681,14 @@ fun LockOverlay() {
 
 /* ============================ DETAIL ============================ */
 @Composable
-fun DetailScreen(s: Scr.Detail) {
+fun DetailScreen(s: Scr.Detail, remote: Boolean = false) {
     val ctx = LocalContext.current
     val acts by Store.acts.collectAsState()
-    val a = acts.firstOrNull { it.id == s.id }
+    val online by Net.online.collectAsState()
+    val ra = if (remote) Cloud.remote[s.id] else null
+    val a = if (remote) ra?.act else acts.firstOrNull { it.id == s.id }
     var replay by remember { mutableIntStateOf(0) }
+    var map by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (s.fresh) Bus.toast("Aktivitas tersimpan") }
     if (a == null) {
         ScreenCol { CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { Nav.pop() }; T("Aktivitas nggak ketemu.", 15, color = C.Mut2) }
@@ -677,10 +697,17 @@ fun DetailScreen(s: Scr.Detail) {
     val bike = a.type == "Sepeda"
     Box(Modifier.fillMaxSize()) {
         Route3D(a.path, 0, live = false, bike = bike, replayKey = replay, modifier = Modifier.fillMaxWidth().height(430.dp))
+        AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
+            Box(Modifier.fillMaxWidth().height(430.dp)) {
+                OsmMap(a.path, 0, live = false, modifier = Modifier.fillMaxSize())
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+            }
+        }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 380.dp, start = 20.dp, end = 20.dp, bottom = 40.dp)
             .windowInsetsPadding(WindowInsets.navigationBars), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Column {
-                T("${a.type} · ${Fmt.dateStr(a.start)}", 13, color = C.Mut)
+                T((if (ra != null) (if (ra.uid == Cloud.uid) "Kamu" else ra.userName) + " · " else "") + "${a.type} · ${Fmt.dateStr(a.start)}" +
+                    (if (!remote) " · " + (if (a.synced) "Tersinkron" else "Tersimpan di HP") else ""), 13, color = C.Mut)
                 T(a.title, 28, FontWeight.ExtraBold, spacing = -1f)
             }
             Stat3(listOf("Jarak" to "${Fmt.km(a.distance)} km",
@@ -718,13 +745,16 @@ fun DetailScreen(s: Scr.Detail) {
             verticalAlignment = Alignment.CenterVertically) {
             CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { Nav.pop() }
             Spacer(Modifier.weight(1f))
-            Row(Modifier.height(44.dp).press { replay++ }.clip(RoundedCornerShape(50)).background(Color(0xE01C1C1F)).padding(horizontal = 16.dp),
+            CircleBtn(if (map) Icons.Rounded.ViewInAr else Icons.Rounded.Map, "Ganti tampilan peta") {
+                if (!map && !online) Bus.toast("Peta asli butuh internet") else map = !map
+            }
+            Spacer(Modifier.width(8.dp))
+            Row(Modifier.height(44.dp).press { map = false; replay++ }.clip(RoundedCornerShape(50)).background(Color(0xE01C1C1F)).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Replay, null, tint = C.Lime, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                 T("Replay 3D", 14, FontWeight.SemiBold)
             }
-            Spacer(Modifier.width(8.dp))
-            CircleBtn(Icons.Rounded.MoreHoriz, "Lainnya") { actMoreSheet(a) }
+            if (!remote) { Spacer(Modifier.width(8.dp)); CircleBtn(Icons.Rounded.MoreHoriz, "Lainnya") { actMoreSheet(a) } }
         }
     }
 }
@@ -737,7 +767,7 @@ fun actMoreSheet(a: Act) {
             textStyle = TextStyle(color = C.Txt, fontSize = 16.sp, fontWeight = FontWeight.Medium), cursorBrush = SolidColor(C.Lime),
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.Card2).border(1.5.dp, C.Lime.copy(alpha = .5f), RoundedCornerShape(16.dp)).padding(16.dp))
         Btn("Simpan judul") { if (name.isNotBlank()) Store.updateAct(a.copy(title = name.trim())); Sheet.close() }
-        Btn("Hapus aktivitas", BK.Danger) { Store.deleteAct(a.id); Sheet.close(); Bus.toast("Aktivitas dihapus"); Nav.pop() }
+        Btn("Hapus aktivitas", BK.Danger) { Store.deleteAct(a.id); Cloud.deleteRemote(a.id); Sheet.close(); Bus.toast("Aktivitas dihapus"); Nav.pop() }
     }
 }
 
@@ -761,6 +791,8 @@ fun ProfileScreen() {
     val ctx = LocalContext.current
     val days by Store.days.collectAsState()
     val acts by Store.acts.collectAsState()
+    val me by Cloud.user.collectAsState()
+    val syncing by Cloud.syncing.collectAsState()
     Store.settingsVer.collectAsState().value
     val totalDist = acts.sumOf { it.distance }; val totalSteps = days.values.sum(); val best = bestStreak(days, acts)
     val badges = listOf(
@@ -788,7 +820,7 @@ fun ProfileScreen() {
                 }
                 Spacer(Modifier.height(10.dp))
                 T(Store.name, 26, FontWeight.ExtraBold, spacing = -.8f)
-                T("Tap avatar buat ganti nama · akun & sinkron di update berikutnya", 13, color = C.Mut, align = TextAlign.Center)
+                T(me?.let { "@${it.username} · ${it.following.size} diikuti" } ?: "Mode offline · tap avatar buat ganti nama", 13, color = C.Mut, align = TextAlign.Center)
             }
             Stat3(listOf("km total" to Fmt.km(totalDist, 0), "aktivitas" to "${acts.size}", "streak terbaik" to "$best"), big = 20)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -807,6 +839,26 @@ fun ProfileScreen() {
                             val fg = if (!ok) Color(0xFF48484A) else if (k % 3 == 0) C.Ink else C.Txt
                             T(v, 19, FontWeight.ExtraBold, fg, spacing = -.5f)
                             T(n, 9, FontWeight.SemiBold, fg, align = TextAlign.Center, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            CardBox(Modifier.fillMaxWidth(), radius = 22.dp) {
+                Column {
+                    val u = me
+                    if (u == null) ListItem("Masuk / Daftar akun", "", last = true) { Nav.push(Scr.Auth) }
+                    else {
+                        val un = acts.count { !it.synced }
+                        ListItem("Sinkron sekarang", if (syncing) "Menyinkronkan…" else if (un > 0) "$un belum" else "Beres") {
+                            Ui.scope.launch { Bus.toast("Menyinkronkan…"); Bus.toast(if (Cloud.sync(true)) "Sinkron beres" else "Gagal sinkron") }
+                        }
+                        ListItem("Tambah teman", "") { addFriendSheet() }
+                        ListItem("Keluar akun", "", last = true) {
+                            Sheet.open {
+                                SheetTitle("Keluar akun?", "Aktivitas di HP tetap aman.")
+                                Btn("Keluar", BK.Dark) { Cloud.logout(); Sheet.close(); Bus.toast("Sudah keluar") }
+                                Btn("Batal", BK.Ghost) { Sheet.close() }
+                            }
                         }
                     }
                 }

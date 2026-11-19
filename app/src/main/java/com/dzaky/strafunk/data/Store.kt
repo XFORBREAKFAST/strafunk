@@ -100,6 +100,7 @@ object Store {
     var name: String get() = prefs.getString("name", "Kamu") ?: "Kamu"; set(v) { prefs.edit().putString("name", v).apply(); bump() }
     var stepSource: String get() = prefs.getString("stepSource", "none") ?: "none"; set(v) { prefs.edit().putString("stepSource", v).apply(); bump() }
     var askedBattery: Boolean get() = prefs.getBoolean("askedBatt", false); set(v) { prefs.edit().putBoolean("askedBatt", v).apply() }
+    var duelWith: String? get() = prefs.getString("duelWith", null); set(v) { prefs.edit().putString("duelWith", v).apply(); bump() }
     var skipBuild: Int get() = prefs.getInt("skipBuild", 0); set(v) { prefs.edit().putInt("skipBuild", v).apply() }
     // fallback sensor langkah
     var lastCounter: Float get() = prefs.getFloat("lastCounter", -1f); set(v) { prefs.edit().putFloat("lastCounter", v).apply() }

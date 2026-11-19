@@ -36,6 +36,8 @@ class App : Application() {
         Net.init(this)
         Sfx.init(this)
         TrackingService.ensureChannels(this)
+        com.dzaky.strafunk.cloud.Cloud.init(this)
+        com.dzaky.strafunk.ui.Osm.init(this)
     }
 }
 
