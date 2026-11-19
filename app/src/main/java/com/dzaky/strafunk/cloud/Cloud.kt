@@ -118,6 +118,8 @@ object Cloud {
         loadProfile(r.user!!.uid, r.user!!.displayName)
     }
 
+    suspend fun resetPassword(email: String) { auth.sendPasswordResetEmail(email).await() }
+
     fun logout() { if (ok) auth.signOut(); user.value = null }
 
     // ---------------- sinkron ----------------

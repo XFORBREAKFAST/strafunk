@@ -142,6 +142,16 @@ fun AuthScreen() {
                     } catch (e: Exception) { err = Cloud.errMsg(e); Sfx.play(Sfx.ERROR) } finally { busy = false }
                 }
             }
+            if (mode == "Masuk") Btn("Lupa password?", BK.Ghost) {
+                if (mail.isBlank() || !mail.contains("@")) { err = "Isi email kamu dulu di atas"; return@Btn }
+                if (!online || !Cloud.ready) { err = "Butuh internet"; return@Btn }
+                Ui.scope.launch {
+                    try { Cloud.resetPassword(mail); err = ""; Sheet.open {
+                        SheetTitle("Cek email kamu 📩", "Link buat bikin password baru sudah dikirim ke $mail. Cek juga folder Spam.")
+                        Btn("Oke") { Sheet.close() }
+                    } } catch (e: Exception) { err = Cloud.errMsg(e) }
+                }
+            }
         }
     }
 }

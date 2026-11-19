@@ -18,12 +18,21 @@ android {
         versionName = "2.$buildNum"
     }
 
+    signingConfigs {
+        create("sf") {
+            storeFile = rootProject.file("signing/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug") // kunci tetap = bisa update tanpa uninstall
+            signingConfig = signingConfigs.getByName("sf") // kunci tetap dari repo = bisa update tanpa uninstall
         }
     }
     compileOptions {
