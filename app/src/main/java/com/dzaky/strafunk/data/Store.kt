@@ -136,6 +136,8 @@ object Store {
     var askedBattery: Boolean get() = prefs.getBoolean("askedBatt", false); set(v) { prefs.edit().putBoolean("askedBatt", v).apply() }
     var duelWith: String? get() = prefs.getString("duelWith", null); set(v) { prefs.edit().putString("duelWith", v).apply(); bump() }
     var filterVehicle: Boolean get() = prefs.getBoolean("filterVeh", true); set(v) { prefs.edit().putBoolean("filterVeh", v).apply(); bump() }
+    var offlineBattle: Boolean get() = prefs.getBoolean("offBattle", true); set(v) { prefs.edit().putBoolean("offBattle", v).apply(); bump() }
+    val deviceId: String get() = prefs.getString("devId", null) ?: java.util.UUID.randomUUID().toString().take(12).also { prefs.edit().putString("devId", it).apply() }
     var skipBuild: Int get() = prefs.getInt("skipBuild", 0); set(v) { prefs.edit().putInt("skipBuild", v).apply() }
     // fallback sensor langkah
     var lastCounter: Float get() = prefs.getFloat("lastCounter", -1f); set(v) { prefs.edit().putFloat("lastCounter", v).apply() }

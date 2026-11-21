@@ -174,3 +174,64 @@ fun joinSheet(r: LiveRun) {
         Btn("Batal", BK.Ghost) { Sheet.close() }
     }
 }
+
+@Composable
+fun OfflineNearby() {
+    val ctx = LocalContext.current
+    val list by com.dzaky.strafunk.cloud.Offline.runners.collectAsState()
+    var ok by remember { mutableStateOf(com.dzaky.strafunk.cloud.Offline.granted(ctx)) }
+    var bt by remember { mutableStateOf(com.dzaky.strafunk.cloud.Offline.btOn(ctx)) }
+    val permL = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
+        ok = com.dzaky.strafunk.cloud.Offline.granted(ctx)
+    }
+    val btL = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) {
+        bt = com.dzaky.strafunk.cloud.Offline.btOn(ctx)
+    }
+    // cek ulang tiap 5 dtk (user bisa nyalain BT dari quick settings)
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5000); bt = com.dzaky.strafunk.cloud.Offline.btOn(ctx); ok = com.dzaky.strafunk.cloud.Offline.granted(ctx) } }
+    DisposableEffect(ok, bt) {
+        if (ok && bt) com.dzaky.strafunk.cloud.Offline.startDiscovery(ctx)
+        onDispose { com.dzaky.strafunk.cloud.Offline.stopDiscovery() }
+    }
+    if (!ok || !bt) {
+        CardBox(Modifier.fillMaxWidth(), radius = 22.dp) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Bluetooth, null, tint = C.Lime, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    T("Battle offline", 14, FontWeight.Bold)
+                    T(if (!ok) "Izinkan perangkat sekitar buat nemuin teman" else "Nyalain Bluetooth buat nemuin teman", 12, color = C.Mut)
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.press {
+                    if (!ok) permL.launch(com.dzaky.strafunk.cloud.Offline.perms())
+                    else try { btL.launch(android.content.Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)) } catch (_: Exception) { Bus.toast("Nyalain Bluetooth dari setelan") }
+                }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 14.dp, vertical = 9.dp)) { T(if (!ok) "Izinkan" else "Nyalain", 13, FontWeight.Bold) }
+            }
+        }
+        return
+    }
+    if (list.isEmpty()) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Bluetooth, null, tint = C.Lime, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+        T("Di dekat kamu (offline)", 17, FontWeight.Bold)
+    }
+    list.values.take(5).forEach { f ->
+        val pub = f.vis == "public"
+        CardBox(Modifier.fillMaxWidth(), radius = 22.dp) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(42.dp).clip(CircleShape).background(C.Card3), contentAlignment = Alignment.Center) { T(Fmt.initials(f.name), 14, FontWeight.Bold) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    T("${f.name} lagi ${f.type.lowercase()}", 15, FontWeight.Bold, maxLines = 1)
+                    T("Bluetooth · " + (if (pub) "public" else "private"), 12, color = C.Mut, maxLines = 1)
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.press {
+                    com.dzaky.strafunk.cloud.Offline.pendingJoin = f; Ui.mode = f.type; Nav.push(Scr.Record(f.type, true))
+                }.clip(RoundedCornerShape(50)).background(if (pub) C.Lime else C.Card3).padding(horizontal = 14.dp, vertical = 9.dp)) {
+                    T(if (pub) "Gabung" else "Minta gabung", 13, FontWeight.Bold, if (pub) C.Ink else C.Txt)
+                }
+            }
+        }
+    }
+}

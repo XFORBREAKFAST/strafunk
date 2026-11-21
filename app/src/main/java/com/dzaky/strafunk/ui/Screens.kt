@@ -74,6 +74,7 @@ import com.dzaky.strafunk.Story
 import com.dzaky.strafunk.Updater
 import com.dzaky.strafunk.cloud.Cloud
 import com.dzaky.strafunk.cloud.Live
+import com.dzaky.strafunk.cloud.Offline
 import com.dzaky.strafunk.cloud.LiveRun
 import com.dzaky.strafunk.data.Act
 import com.dzaky.strafunk.data.Fmt
@@ -501,6 +502,7 @@ fun HomeScreen() {
                 } else Btn("Balik ke hari ini", BK.Dark) { sel = today.toString() }
             }
             if (selD == today && !snap.active) NearbySection()
+            if (selD == today && !snap.active && Store.offlineBattle) OfflineNearby()
             if (selD == today && acts.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     T("Aktivitas terakhir", 17, FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -560,7 +562,7 @@ fun exitSheet(ctx: Context) {
 
 fun finishRec(ctx: Context, save: Boolean) {
     val r = TrackingService.stop(ctx)
-    val battle = if (Live.session.value != null) Live.stopRun() else emptyList()
+    val battle = ((if (Live.session.value != null) Live.stopRun() else emptyList()) + (if (Offline.active) Offline.stopRun() else emptyList())).distinct()
     if (!save) { Bus.toast("Aktivitas dibuang"); leaveRecord(); return }
     val s = r.snap; val sec = (s.elapsedMs / 1000).toInt()
     if (s.dist < 20 && sec < 30) { Bus.toast("Terlalu pendek, nggak disimpan"); leaveRecord(); return }
@@ -596,7 +598,8 @@ fun RecordScreen(s: Scr.Record) {
             add(Manifest.permission.ACCESS_FINE_LOCATION); add(Manifest.permission.ACCESS_COARSE_LOCATION)
             if (Build.VERSION.SDK_INT >= 29) add(Manifest.permission.ACTIVITY_RECOGNITION)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-        }.filter { !granted(ctx, it) }
+            if (Store.offlineBattle) addAll(Offline.perms())
+        }.distinct().filter { !granted(ctx, it) }
         if (need.isNotEmpty()) { val d = CompletableDeferred<Unit>(); permDef = d; permLauncher.launch(need.toTypedArray()); d.await() }
         if (!granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) {
             sheetAwait {
@@ -628,7 +631,7 @@ fun RecordScreen(s: Scr.Record) {
         for (i in 0..3) {
             count = i; Sfx.play(if (i < 3) Sfx.TICK else Sfx.GO)
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            if (i == 3) { TrackingService.start(ctx, s.type, Store.stride, Store.weight); if (Cloud.uid != null) Live.startRun(ctx, s.type) }
+            if (i == 3) { TrackingService.start(ctx, s.type, Store.stride, Store.weight); if (Cloud.uid != null) Live.startRun(ctx, s.type); Offline.startRun(ctx, s.type) }
             delay(800)
         }
         count = -1
@@ -654,8 +657,11 @@ fun RecordScreen(s: Scr.Record) {
     val sec = elapsed / 1000.0
     val path = remember(snap.pathVer, snap.active) { Track.pathCopy() }
     var map by remember { mutableStateOf(false) }
-    val rivals by Live.rivals.collectAsState()
+    val onRivals by Live.rivals.collectAsState()
+    val offRivals by Offline.rivals.collectAsState()
+    val rivals = remember(onRivals, offRivals) { onRivals + offRivals.filter { o -> onRivals.none { it.run.uid == o.run.uid } } }
     val reqs by Live.requests.collectAsState()
+    val offReqs by Offline.requests.collectAsState()
     val sess by Live.session.collectAsState()
     val host by Live.hostRun.collectAsState()
     val vis by Live.vis.collectAsState()
@@ -715,15 +721,15 @@ fun RecordScreen(s: Scr.Record) {
                         T("Battle bareng ${host?.name ?: "…"}", 12, FontWeight.SemiBold, C.Lime)
                     }
                 }
-                reqs.forEach { (uid, name) ->
+                (reqs.map { Triple(it.key, it.value, false) } + offReqs.map { Triple(it.key, it.value + " (offline)", true) }).forEach { (uid, name, off) ->
                     Row(Modifier.fillMaxWidth().widthIn(max = 480.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xF21C1C1F)).padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(34.dp).clip(CircleShape).background(C.Card3), contentAlignment = Alignment.Center) { T(Fmt.initials(name), 12, FontWeight.Bold) }
                         Spacer(Modifier.width(10.dp))
                         T("$name minta gabung", 14, FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                        Box(Modifier.press { Live.reject(uid) }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Tolak", 13, FontWeight.SemiBold) }
+                        Box(Modifier.press { if (off) Offline.rejectReq(uid) else Live.reject(uid) }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Tolak", 13, FontWeight.SemiBold) }
                         Spacer(Modifier.width(6.dp))
-                        Box(Modifier.press { Live.accept(uid); Sfx.play(Sfx.SUCCESS) }.clip(RoundedCornerShape(50)).background(C.Lime).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Terima", 13, FontWeight.Bold, C.Ink) }
+                        Box(Modifier.press { if (off) Offline.acceptReq(uid) else Live.accept(uid); Sfx.play(Sfx.SUCCESS) }.clip(RoundedCornerShape(50)).background(C.Lime).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Terima", 13, FontWeight.Bold, C.Ink) }
                     }
                 }
             }
@@ -1033,6 +1039,14 @@ fun ProfileScreen() {
                 Column {
                     Row(Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         T("Efek suara", 15, modifier = Modifier.weight(1f)); SwitchSf(Store.sound) { Store.sound = it }
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            T("Battle offline (Bluetooth)", 15)
+                            T("Lari bareng tanpa internet, HP harus berdekatan", 12, color = C.Mut)
+                        }
+                        SwitchSf(Store.offlineBattle) { Store.offlineBattle = it; if (!it) Offline.stopDiscovery() }
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
