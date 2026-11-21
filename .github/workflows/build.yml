@@ -39,11 +39,11 @@ jobs:
           name: Strafunk-APK
           path: Strafunk.apk
 
-      - name: Publish ke Releases (pre-release native)
+      - name: Publish ke Releases (main = Latest, cabang lain = pre-release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: native-${{ github.run_number }}
-          name: Strafunk native build ${{ github.run_number }}
+          name: Strafunk build ${{ github.run_number }}
           files: Strafunk.apk
-          prerelease: true
-          make_latest: false
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          make_latest: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
