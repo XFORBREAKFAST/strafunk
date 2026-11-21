@@ -38,6 +38,7 @@ class App : Application() {
         TrackingService.ensureChannels(this)
         com.dzaky.strafunk.cloud.Cloud.init(this)
         com.dzaky.strafunk.ui.Osm.init(this)
+        com.dzaky.strafunk.steps.Vehicle.register(this)
     }
 }
 

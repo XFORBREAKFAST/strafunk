@@ -12,6 +12,9 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+import androidx.health.connect.client.request.AggregateRequest
+import java.time.Instant
+import java.time.ZoneId
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -68,6 +71,26 @@ object Steps {
                 var d = from
                 while (!d.isAfter(to)) { m[Fmt.key(d)] = 0L; d = d.plusDays(1) }
                 res.forEach { g -> m[Fmt.key(g.startTime.toLocalDate())] = g.result[StepsRecord.COUNT_TOTAL] ?: 0L }
+                // buang langkah selama di kendaraan
+                val vm = HashMap<String, Long>()
+                if (Store.filterVehicle) {
+                    val client = HealthConnectClient.getOrCreate(ctx); val zone = ZoneId.systemDefault(); val now = System.currentTimeMillis()
+                    var day = from
+                    while (!day.isAfter(to)) {
+                        val ds = day.atStartOfDay(zone).toInstant().toEpochMilli(); val de = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                        var vs = 0L
+                        for (iv in Store.vehIntervals()) {
+                            val s = maxOf(iv[0], ds); val e = minOf(if (iv[1] < 0) now else iv[1], de, now)
+                            if (e - s < 30_000) continue
+                            vs += try { withContext(Dispatchers.IO) { client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL),
+                                TimeRangeFilter.between(Instant.ofEpochMilli(s), Instant.ofEpochMilli(e))))[StepsRecord.COUNT_TOTAL] ?: 0L } } catch (_: Exception) { 0L }
+                        }
+                        val k = Fmt.key(day); vm[k] = vs
+                        m[k]?.let { m[k] = maxOf(0L, it - vs) }
+                        day = day.plusDays(1)
+                    }
+                }
+                Store.mergeVeh(vm.filterKeys { !LocalDate.parse(it).isAfter(LocalDate.now()) })
                 // jangan nol-kan hari depan
                 val today = LocalDate.now()
                 Store.mergeDays(m.filterKeys { !LocalDate.parse(it).isAfter(today) })
@@ -87,7 +110,11 @@ object Steps {
         val last = Store.lastCounter
         if (last >= 0) {
             val d = if (v >= last) v - last else v
-            if (d > 0 && d < 60000) Store.addSteps(Fmt.key(LocalDate.now()), d.toLong())
+            if (d > 0 && d < 60000) {
+                val k = Fmt.key(LocalDate.now())
+                if (Store.filterVehicle && Store.inVehicle()) Store.mergeVeh(mapOf(k to (Store.vehDays.value[k] ?: 0L) + d.toLong()))
+                else Store.addSteps(k, d.toLong())
+            }
         }
         Store.lastCounter = v
     }

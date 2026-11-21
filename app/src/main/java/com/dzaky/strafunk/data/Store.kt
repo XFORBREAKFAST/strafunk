@@ -63,6 +63,10 @@ object Store {
     /** langkah per hari, key "yyyy-MM-dd" */
     val days = MutableStateFlow<Map<String, Long>>(emptyMap())
     val settingsVer = MutableStateFlow(0)
+    /** langkah yang dibuang karena di kendaraan, per hari */
+    val vehDays = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** rentang waktu di kendaraan [mulai, selesai] (selesai = -1 kalau masih berlangsung) */
+    private val veh = ArrayList<LongArray>()
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences("strafunk", Context.MODE_PRIVATE)
@@ -70,6 +74,10 @@ object Store {
         acts.value = try {
             if (actsFile.exists()) JSONArray(actsFile.readText()).let { a -> List(a.length()) { Act.fromJson(a.getJSONObject(it)) } } else emptyList()
         } catch (e: Exception) { emptyList() }
+        try {
+            val a = JSONArray(prefs.getString("veh", "[]")); for (i in 0 until a.length()) { val x = a.getJSONArray(i); veh.add(longArrayOf(x.getLong(0), x.getLong(1))) }
+            val o = JSONObject(prefs.getString("vehDays", "{}") ?: "{}"); vehDays.value = o.keys().asSequence().associateWith { o.getLong(it) }
+        } catch (_: Exception) { }
         days.value = try {
             val o = JSONObject(prefs.getString("days", "{}") ?: "{}")
             o.keys().asSequence().associateWith { o.getLong(it) }
@@ -98,6 +106,23 @@ object Store {
         days.value = days.value + m
         prefs.edit().putString("days", JSONObject(days.value as Map<*, *>).toString()).apply()
     }
+    // ---- rentang kendaraan ----
+    private fun saveVeh() {
+        val cut = System.currentTimeMillis() - 45L * 86_400_000
+        veh.removeAll { it[1] in 0 until cut }
+        val a = JSONArray(); veh.forEach { a.put(JSONArray().put(it[0]).put(it[1])) }
+        prefs.edit().putString("veh", a.toString()).apply()
+    }
+    @Synchronized fun vehStart(t: Long) { if (veh.lastOrNull()?.get(1) == -1L) return; veh.add(longArrayOf(t, -1L)); saveVeh() }
+    @Synchronized fun vehEnd(t: Long) { val l = veh.lastOrNull() ?: return; if (l[1] == -1L) { l[1] = maxOf(t, l[0]); saveVeh() } }
+    @Synchronized fun inVehicle() = veh.lastOrNull()?.get(1) == -1L
+    @Synchronized fun vehIntervals(): List<LongArray> = veh.map { it.clone() }
+    fun mergeVeh(m: Map<String, Long>) {
+        if (m.isEmpty()) return
+        vehDays.value = vehDays.value + m
+        prefs.edit().putString("vehDays", JSONObject(vehDays.value as Map<*, *>).toString()).apply()
+    }
+
     fun addSteps(day: String, n: Long) { mergeDays(mapOf(day to (days.value[day] ?: 0L) + n)) }
 
     // ---- pengaturan ----
@@ -110,6 +135,7 @@ object Store {
     var stepSource: String get() = prefs.getString("stepSource", "none") ?: "none"; set(v) { prefs.edit().putString("stepSource", v).apply(); bump() }
     var askedBattery: Boolean get() = prefs.getBoolean("askedBatt", false); set(v) { prefs.edit().putBoolean("askedBatt", v).apply() }
     var duelWith: String? get() = prefs.getString("duelWith", null); set(v) { prefs.edit().putString("duelWith", v).apply(); bump() }
+    var filterVehicle: Boolean get() = prefs.getBoolean("filterVeh", true); set(v) { prefs.edit().putBoolean("filterVeh", v).apply(); bump() }
     var skipBuild: Int get() = prefs.getInt("skipBuild", 0); set(v) { prefs.edit().putInt("skipBuild", v).apply() }
     // fallback sensor langkah
     var lastCounter: Float get() = prefs.getFloat("lastCounter", -1f); set(v) { prefs.edit().putFloat("lastCounter", v).apply() }

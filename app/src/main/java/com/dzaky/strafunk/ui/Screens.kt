@@ -290,6 +290,7 @@ fun checkUpdate(ctx: Context, manual: Boolean) {
 fun HomeScreen() {
     val ctx = LocalContext.current
     val days by Store.days.collectAsState()
+    val vehDays by Store.vehDays.collectAsState()
     val acts by Store.acts.collectAsState()
     val snap by Track.snap.collectAsState()
     val online by Net.online.collectAsState()
@@ -304,6 +305,7 @@ fun HomeScreen() {
         Ui.scope.launch { refreshWeek(ctx, Fmt.monday(selD)); hcGranted = Steps.hcGranted(ctx) }
     }
     val actLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        com.dzaky.strafunk.steps.Vehicle.register(ctx)
         Ui.scope.launch { refreshWeek(ctx, mon0) }
     }
     LaunchedEffect(pager.currentPage) { refreshWeek(ctx, mon0.minusWeeks(pager.currentPage.toLong())); hcGranted = Steps.hcGranted(ctx) }
@@ -395,6 +397,13 @@ fun HomeScreen() {
                         T(if (selD == today) "Langkah hari ini" else "Langkah " + Fmt.dayLabel(selD), 13, color = C.Mut)
                         T(Fmt.num(shown), 38, FontWeight.ExtraBold, spacing = -1.5f)
                         T("dari ${Fmt.num(tgt)}", 13, color = C.Mut)
+                        val vs = vehDays[sel] ?: 0L
+                        AnimatedVisibility(vs > 0 && Store.filterVehicle) {
+                            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.TwoWheeler, null, tint = C.Mut, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp))
+                                T("−${Fmt.num(vs)} di kendaraan", 12, color = C.Mut)
+                            }
+                        }
                         if (prev > 0) {
                             val diff = ((steps - prev) * 100 / prev).toInt()
                             Spacer(Modifier.height(6.dp))
@@ -941,6 +950,18 @@ fun ProfileScreen() {
                 Column {
                     Row(Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         T("Efek suara", 15, modifier = Modifier.weight(1f)); SwitchSf(Store.sound) { Store.sound = it }
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            T("Saring langkah di kendaraan", 15)
+                            T("Buang langkah palsu waktu naik motor/mobil/sepeda", 12, color = C.Mut)
+                        }
+                        SwitchSf(Store.filterVehicle) {
+                            Store.filterVehicle = it
+                            if (it) com.dzaky.strafunk.steps.Vehicle.register(ctx) else com.dzaky.strafunk.steps.Vehicle.unregister(ctx)
+                            Ui.scope.launch { refreshWeek(ctx, Fmt.monday(LocalDate.now())) }
+                        }
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
                     ListItem("Sumber langkah", when (Store.stepSource) { "hc" -> "Health Connect"; "sensor" -> "Sensor HP"; else -> "Belum aktif" }) {

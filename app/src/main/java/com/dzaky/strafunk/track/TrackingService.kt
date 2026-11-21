@@ -158,6 +158,8 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
     private var tickN = 0
     private var useFused = false
     private var lastPtTime = 0L
+    private var lastFix = 0L        // titik akurat terakhir (walau dibuang karena kecepatan)
+    private var fastSince = 0L      // sejak kapan kecepatan kayak kendaraan
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -222,8 +224,15 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         }
     }
 
+    private fun autoPause() {
+        fastSince = 0L
+        setRunning(false)
+        notifyEvent(this, "Kayaknya kamu naik kendaraan 🛵", "Rekaman ${type.lowercase()} dijeda otomatis. Buka app buat lanjut atau selesai.")
+    }
+
     private fun setRunning(r: Boolean) {
         if (!active || running == r) return
+        fastSince = 0L
         val now = SystemClock.elapsedRealtime()
         if (r) { pausedTotal += now - pausedAt; lastLat = Double.NaN; lastStep = -1.0; kVar = -1.0 } else pausedAt = now
         running = r
@@ -259,7 +268,16 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         val t = System.currentTimeMillis()
         if (useFused && prov == LocationManager.GPS_PROVIDER && t - lastPtTime < 2500) return
         if (l.hasAccuracy() && l.accuracy > 50) { publish(); return }
-        lastPtTime = t
+        lastPtTime = t; lastFix = t
+        // deteksi kendaraan dari kecepatan (bukan buat sepeda)
+        if (type != "Sepeda") {
+            val raw = if (l.hasSpeed()) l.speed.toDouble() else if (!lastLat.isNaN() && t > lastT) {
+                val r0 = FloatArray(1); Location.distanceBetween(lastLat, lastLng, l.latitude, l.longitude, r0); r0[0] / ((t - lastT) / 1000.0)
+            } else 0.0
+            val thr = if (type == "Jalan") 4.5 else 7.5
+            if (raw > thr) { if (fastSince == 0L) fastSince = t; if (t - fastSince > 20_000) { autoPause(); return } }
+            else fastSince = 0L
+        }
         val a = maxOf(if (l.hasAccuracy()) l.accuracy.toDouble() else 10.0, 3.0)
         val q = if (type == "Sepeda") 8.0 else 3.0
         if (kVar < 0) { kLat = l.latitude; kLng = l.longitude; kVar = a * a; kT = t }
@@ -297,9 +315,9 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         val v = e.values[0].toDouble()
         if (lastStep >= 0 && running) {
             val d = v - lastStep
-            if (d > 0 && d < 500) {
+            if (d > 0 && d < 500 && fastSince == 0L) {
                 steps += d.toLong()
-                if (type != "Sepeda" && System.currentTimeMillis() - lastGood > 15000) {
+                if (type != "Sepeda" && fastSince == 0L && System.currentTimeMillis() - lastFix > 15000) {
                     dist += d * stride / 100.0; est = true; distAt = System.currentTimeMillis(); checkSplits()
                 }
             }
