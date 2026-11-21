@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -120,6 +122,10 @@ object Ui {
     val scope = MainScope()
 }
 
+/** layar lebar mendatar (tablet landscape) */
+@Composable
+fun isLandscapeWide(): Boolean { val c = LocalConfiguration.current; return c.screenWidthDp >= 720 && c.screenWidthDp > c.screenHeightDp }
+
 /* ============================ root ============================ */
 @Composable
 fun StrafunkApp(act: ComponentActivity) {
@@ -186,7 +192,7 @@ fun StrafunkApp(act: ComponentActivity) {
                 else -> (fadeIn(tween(260)) + slideInVertically(tween(320)) { it / 40 }) togetherWith fadeOut(tween(160))
             }
         }) { s ->
-            Box(Modifier.fillMaxSize().background(Color.Black)) {
+            Box(Modifier.fillMaxSize().background(Color.Black).padding(start = if (s.tab && isLandscapeWide()) 96.dp else 0.dp)) {
                 when (s) {
                     Scr.Home -> HomeScreen()
                     Scr.Feed -> FeedScreen()
@@ -200,7 +206,9 @@ fun StrafunkApp(act: ComponentActivity) {
                 }
             }
         }
-        AnimatedVisibility(Nav.cur.tab, Modifier.align(Alignment.BottomCenter),
+        if (isLandscapeWide()) AnimatedVisibility(Nav.cur.tab, Modifier.align(Alignment.CenterStart),
+            enter = slideInHorizontally(tween(380, easing = EaseOutQuint)) { -it }, exit = slideOutHorizontally(tween(300)) { -it }) { TabRail() }
+        else AnimatedVisibility(Nav.cur.tab, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(tween(380, easing = EaseOutQuint)) { it }, exit = slideOutVertically(tween(300)) { it }) { TabBar() }
         SheetHost()
         ToastHost()
@@ -228,6 +236,24 @@ private fun TabBar() {
             TabItem(Icons.Rounded.EmojiEvents, "Ranking", Scr.Ranking)
             TabItem(Icons.Rounded.Person, "Profil", Scr.Profile)
         }
+    }
+}
+
+@Composable
+private fun TabRail() {
+    val snap by Track.snap.collectAsState()
+    Row(Modifier.fillMaxHeight()) {
+        Column(Modifier.fillMaxHeight().width(96.dp).background(Color(0xF20E0E10)).windowInsetsPadding(WindowInsets.systemBars).padding(vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically)) {
+            TabItem(Icons.Rounded.Home, "Beranda", Scr.Home)
+            TabItem(Icons.Rounded.Groups, "Feed", Scr.Feed)
+            Box(Modifier.size(56.dp).press { openRecord() }.clip(CircleShape).background(C.Lime), contentAlignment = Alignment.Center) {
+                Icon(if (snap.active) Icons.Rounded.DirectionsRun else Icons.Rounded.PlayArrow, "Rekam aktivitas", tint = C.Ink, modifier = Modifier.size(28.dp))
+            }
+            TabItem(Icons.Rounded.EmojiEvents, "Ranking", Scr.Ranking)
+            TabItem(Icons.Rounded.Person, "Profil", Scr.Profile)
+        }
+        Box(Modifier.fillMaxHeight().width(1.dp).background(C.Line))
     }
 }
 
@@ -297,6 +323,7 @@ fun HomeScreen() {
     Store.settingsVer.collectAsState().value
     val today = remember { LocalDate.now() }
     val mon0 = remember { Fmt.monday(today) }
+    val wideHome = isLandscapeWide()
     var sel by rememberSaveable { mutableStateOf(today.toString()) }
     val selD = LocalDate.parse(sel)
     val pager = rememberPagerState(pageCount = { 104 })
@@ -316,7 +343,8 @@ fun HomeScreen() {
 
     Box(Modifier.fillMaxSize()) {
         Glow(Modifier.align(Alignment.TopCenter).offset(y = (-160).dp).size(460.dp, 360.dp))
-        ScreenCol(gap = 18.dp) {
+        ScreenCol(gap = 18.dp, maxWidth = if (wideHome) 1160.dp else 720.dp) {
+            val colA: @Composable ColumnScope.() -> Unit = {
             // header
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(46.dp).press { Nav.tab(Scr.Profile) }.border(1.5.dp, C.Lime, CircleShape).padding(3.dp).clip(CircleShape).background(C.Card2),
@@ -458,6 +486,8 @@ fun HomeScreen() {
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = C.Mut)
                 }
             }
+            }
+            val colB: @Composable ColumnScope.() -> Unit = {
             // aksi
             AnimatedContent(selD == today, label = "act") { isToday ->
                 if (isToday) {
@@ -478,6 +508,11 @@ fun HomeScreen() {
                 }
                 acts.take(3).forEach { ActRow(it) }
             }
+            }
+            if (wideHome) Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp), content = colA)
+                Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(18.dp), content = colB)
+            } else { colA(); colB() }
         }
     }
 }
@@ -639,67 +674,75 @@ fun RecordScreen(s: Scr.Record) {
         else -> C.Green to "GPS kuat ±${snap.acc.roundToInt()}m"
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxWidth().height(topH),
-            others = rivals.map { it.path to Color(it.color) })
-        AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
-            Box(Modifier.fillMaxWidth().height(topH)) {
-                OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize(), here = if (snap.lat.isNaN()) null else doubleArrayOf(snap.lat, snap.lng),
-                    others = rivals.map { it.path to it.color })
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+    val wide = isLandscapeWide()
+    val dots3d = rivals.mapNotNull { r -> r.path.lastOrNull()?.let { listOf(it) to Color(r.color) } }
+    val dotsMap = rivals.mapNotNull { r -> r.path.lastOrNull()?.let { listOf(it) to r.color } }
+    val mapLayer: @Composable (Modifier) -> Unit = { m ->
+        Box(m.clipToBounds()) {
+            Route3D(path, snap.pathVer, live = true, bike = bike, replayKey = 0, modifier = Modifier.fillMaxSize(), others = dots3d)
+            AnimatedVisibility(map, Modifier.fillMaxSize(), enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    OsmMap(path, snap.pathVer, live = true, modifier = Modifier.fillMaxSize(), here = if (snap.lat.isNaN()) null else doubleArrayOf(snap.lat, snap.lng), others = dotsMap)
+                    Box(Modifier.align(if (wide) Alignment.CenterEnd else Alignment.BottomCenter).then(if (wide) Modifier.fillMaxHeight().width(80.dp) else Modifier.fillMaxWidth().height(120.dp))
+                        .background(if (wide) Brush.horizontalGradient(listOf(Color.Transparent, Color.Black)) else Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+                }
             }
         }
-        Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { if (TrackingService.active) exitSheet(ctx) else leaveRecord() }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Pill("$type · $gt · " + if (online) "Online" else "Offline", gc) }
-            CircleBtn(if (map) Icons.Rounded.ViewInAr else Icons.Rounded.Map, "Ganti tampilan peta") {
-                if (!map && !online) Bus.toast("Peta asli butuh internet. Rute tetap direkam") else map = !map
+    }
+    val header: @Composable () -> Unit = {
+        Box(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { if (TrackingService.active) exitSheet(ctx) else leaveRecord() }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Pill("$type · $gt · " + if (online) "Online" else "Offline", gc) }
+                CircleBtn(if (map) Icons.Rounded.ViewInAr else Icons.Rounded.Map, "Ganti tampilan peta") {
+                    if (!map && !online) Bus.toast("Peta asli butuh internet. Rute tetap direkam") else map = !map
+                }
             }
-        }
-        // chip public/private + permintaan gabung
-        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(top = 68.dp, start = 20.dp, end = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (snap.active && sess != null) {
-                val me = Cloud.uid
-                if (sess == me) {
-                    Row(Modifier.press { Live.setVis(if (vis == "public") "private" else "public"); Bus.toast(if (vis == "public") "Private: cuma teman yang bisa minta gabung" else "Public: orang sekitar bisa lihat & gabung") }
-                        .clip(RoundedCornerShape(50)).background(if (vis == "public") C.Lime.copy(alpha = .16f) else Color(0xE0161618)).padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (vis == "public") Icons.Rounded.Public else Icons.Rounded.Lock, null, tint = if (vis == "public") C.Lime else C.Mut2, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp)); T(if (vis == "public") "Public · bisa digabung" else "Private", 12, FontWeight.SemiBold, if (vis == "public") C.Lime else C.Mut2)
+            Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(top = 68.dp, start = 20.dp, end = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (snap.active && sess != null) {
+                    val me = Cloud.uid
+                    if (sess == me) {
+                        Row(Modifier.press { Live.setVis(if (vis == "public") "private" else "public"); Bus.toast(if (vis == "public") "Private: cuma teman yang bisa minta gabung" else "Public: orang sekitar bisa lihat & gabung") }
+                            .clip(RoundedCornerShape(50)).background(if (vis == "public") C.Lime.copy(alpha = .16f) else Color(0xE0161618)).padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (vis == "public") Icons.Rounded.Public else Icons.Rounded.Lock, null, tint = if (vis == "public") C.Lime else C.Mut2, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp)); T(if (vis == "public") "Public · bisa digabung" else "Private", 12, FontWeight.SemiBold, if (vis == "public") C.Lime else C.Mut2)
+                        }
+                    } else Row(Modifier.clip(RoundedCornerShape(50)).background(C.Lime.copy(alpha = .16f)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Bolt, null, tint = C.Lime, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp))
+                        T("Battle bareng ${host?.name ?: "…"}", 12, FontWeight.SemiBold, C.Lime)
                     }
-                } else Row(Modifier.clip(RoundedCornerShape(50)).background(C.Lime.copy(alpha = .16f)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Bolt, null, tint = C.Lime, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp))
-                    T("Battle bareng ${host?.name ?: "…"}", 12, FontWeight.SemiBold, C.Lime)
                 }
-            }
-            reqs.forEach { (uid, name) ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF21C1C1F)).padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).clip(CircleShape).background(C.Card3), contentAlignment = Alignment.Center) { T(Fmt.initials(name), 12, FontWeight.Bold) }
-                    Spacer(Modifier.width(10.dp))
-                    T("$name minta gabung", 14, FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                    Box(Modifier.press { Live.reject(uid) }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Tolak", 13, FontWeight.SemiBold) }
-                    Spacer(Modifier.width(6.dp))
-                    Box(Modifier.press { Live.accept(uid); Sfx.play(Sfx.SUCCESS) }.clip(RoundedCornerShape(50)).background(C.Lime).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Terima", 13, FontWeight.Bold, C.Ink) }
+                reqs.forEach { (uid, name) ->
+                    Row(Modifier.fillMaxWidth().widthIn(max = 480.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xF21C1C1F)).padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(34.dp).clip(CircleShape).background(C.Card3), contentAlignment = Alignment.Center) { T(Fmt.initials(name), 12, FontWeight.Bold) }
+                        Spacer(Modifier.width(10.dp))
+                        T("$name minta gabung", 14, FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                        Box(Modifier.press { Live.reject(uid) }.clip(RoundedCornerShape(50)).background(C.Card3).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Tolak", 13, FontWeight.SemiBold) }
+                        Spacer(Modifier.width(6.dp))
+                        Box(Modifier.press { Live.accept(uid); Sfx.play(Sfx.SUCCESS) }.clip(RoundedCornerShape(50)).background(C.Lime).padding(horizontal = 12.dp, vertical = 8.dp)) { T("Terima", 13, FontWeight.Bold, C.Ink) }
+                    }
                 }
             }
         }
-        Column(Modifier.fillMaxWidth().padding(top = if (battle) 320.dp else 430.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(if (battle) 14.dp else 22.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-                T(Fmt.km(disp), if (battle) 72 else 92, FontWeight.ExtraBold, spacing = if (battle) -4f else -5f)
-                Spacer(Modifier.width(8.dp)); T("km", 18, FontWeight.SemiBold, C.Mut, Modifier.padding(bottom = 18.dp))
-            }
-            Stat3(listOf(
-                "Waktu" to Fmt.dur(sec.toInt()),
-                (if (bike) "km/jam" else "Pace /km") to (if (bike) Fmt.speed(snap.dist, sec) else Fmt.pace(if (snap.dist > 30) sec / (snap.dist / 1000) else Double.NaN)),
-                (if (bike) "Kalori" else "Langkah") to (if (bike) Fmt.num(Fmt.kcal(type, snap.dist, sec, Store.weight)) else Fmt.num(snap.steps))
-            ))
-            AnimatedVisibility(battle, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { BattlePanel(rivals, bike) }
+    }
+    val statsBlock: @Composable ColumnScope.(Boolean) -> Unit = { compact ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+            T(Fmt.km(disp), if (compact) 72 else 92, FontWeight.ExtraBold, spacing = if (compact) -4f else -5f)
+            Spacer(Modifier.width(8.dp)); T("km", 18, FontWeight.SemiBold, C.Mut, Modifier.padding(bottom = 18.dp))
         }
-        Row(Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+        Stat3(listOf(
+            "Waktu" to Fmt.dur(sec.toInt()),
+            (if (bike) "km/jam" else "Pace /km") to (if (bike) Fmt.speed(snap.dist, sec) else Fmt.pace(if (snap.dist > 30) sec / (snap.dist / 1000) else Double.NaN)),
+            (if (bike) "Kalori" else "Langkah") to (if (bike) Fmt.num(Fmt.kcal(type, snap.dist, sec, Store.weight)) else Fmt.num(snap.steps))
+        ))
+        AnimatedVisibility(battle, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { BattlePanel(rivals, bike) }
+    }
+    val controls: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
             CircleBtn(Icons.Rounded.Stop, "Selesai", 60.dp, C.Card2, Color(0xFFFF453A)) { if (TrackingService.active) exitSheet(ctx) else leaveRecord() }
             val running = snap.running
             Box(Modifier.size(92.dp).press {
@@ -712,6 +755,28 @@ fun RecordScreen(s: Scr.Record) {
                 }
             }
             CircleBtn(Icons.Rounded.Lock, "Kunci layar", 60.dp, C.Card2) { Ui.locked = true }
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1.15f).fillMaxHeight()) { mapLayer(Modifier.fillMaxSize()); header() }
+                Column(Modifier.weight(1f).fillMaxHeight().windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 28.dp, vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Spacer(Modifier.weight(1f))
+                    statsBlock(battle)
+                    Spacer(Modifier.weight(1f))
+                    controls()
+                }
+            }
+        } else {
+            mapLayer(Modifier.fillMaxWidth().height(topH))
+            header()
+            Column(Modifier.fillMaxWidth().padding(top = if (battle) 320.dp else 430.dp, start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(if (battle) 14.dp else 22.dp)) {
+                statsBlock(battle)
+            }
+            Box(Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 40.dp)) { controls() }
         }
         if (count >= 0) {
             Box(Modifier.fillMaxSize().background(Color(0xB3000000)).clickable(remember { MutableInteractionSource() }, null) {}, contentAlignment = Alignment.Center) {
@@ -764,16 +829,19 @@ fun DetailScreen(s: Scr.Detail, remote: Boolean = false) {
         return
     }
     val bike = a.type == "Sepeda"
-    Box(Modifier.fillMaxSize()) {
-        Route3D(a.path, 0, live = false, bike = bike, replayKey = replay, modifier = Modifier.fillMaxWidth().height(430.dp))
-        AnimatedVisibility(map, enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
-            Box(Modifier.fillMaxWidth().height(430.dp)) {
-                OsmMap(a.path, 0, live = false, modifier = Modifier.fillMaxSize())
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+    val wide = isLandscapeWide()
+    val mapLayer: @Composable (Modifier) -> Unit = { m ->
+        Box(m.clipToBounds()) {
+            Route3D(a.path, 0, live = false, bike = bike, replayKey = replay, modifier = Modifier.fillMaxSize())
+            AnimatedVisibility(map, Modifier.fillMaxSize(), enter = fadeIn(tween(400)), exit = fadeOut(tween(300))) {
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    OsmMap(a.path, 0, live = false, modifier = Modifier.fillMaxSize())
+                    if (!wide) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
+                }
             }
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 380.dp, start = 20.dp, end = 20.dp, bottom = 40.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    }
+    val content: @Composable ColumnScope.() -> Unit = {
             Column {
                 T((if (ra != null) (if (ra.uid == Cloud.uid) "Kamu" else ra.userName) + " · " else "") + "${a.type} · ${Fmt.dateStr(a.start)}" +
                     (if (!remote) " · " + (if (a.synced) "Tersinkron" else "Tersimpan di HP") else ""), 13, color = C.Mut)
@@ -815,7 +883,8 @@ fun DetailScreen(s: Scr.Detail, remote: Boolean = false) {
             }
             if (a.est) T("Sebagian jarak diperkirakan dari langkah karena GPS lemah.", 12, color = C.Mut, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Btn("Bagikan ke Story", icon = Icons.Rounded.Share) { try { Story.share(ctx, a) } catch (e: Exception) { Bus.toast("Gagal membagikan") } }
-        }
+            }
+    val topBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             CircleBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") { Nav.pop() }
@@ -830,6 +899,20 @@ fun DetailScreen(s: Scr.Detail, remote: Boolean = false) {
                 T("Replay 3D", 14, FontWeight.SemiBold)
             }
             if (!remote) { Spacer(Modifier.width(8.dp)); CircleBtn(Icons.Rounded.MoreHoriz, "Lainnya") { actMoreSheet(a) } }
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1.15f).fillMaxHeight()) { mapLayer(Modifier.fillMaxSize()); topBar() }
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(horizontal = 24.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp), content = content)
+            }
+        } else {
+            mapLayer(Modifier.fillMaxWidth().height(430.dp))
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 380.dp, start = 20.dp, end = 20.dp, bottom = 40.dp)
+                .windowInsetsPadding(WindowInsets.navigationBars), verticalArrangement = Arrangement.spacedBy(18.dp), content = content)
+            topBar()
         }
     }
 }

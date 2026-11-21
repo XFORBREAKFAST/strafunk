@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -374,10 +375,12 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
             val lime = C.Lime
             if (live) {
                 translate(tr.value.x, tr.value.y) {
-                    otherPaths.forEach { (op, oc, last) ->
-                        drawPath(op, oc.copy(alpha = .22f), style = Stroke(20f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        drawPath(op, oc, style = Stroke(7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        if (last != null) { drawCircle(Color.White, 12f, last); drawCircle(oc, 8.5f, last) }
+                    // pemain lain: cuma titik posisinya (tanpa garis)
+                    otherPaths.forEach { (_, oc, last) ->
+                        if (last != null) {
+                            drawCircle(oc.copy(alpha = .35f * (1 - pulse)), 16f * (1 + 1.4f * pulse), last)
+                            drawCircle(Color.White, 14f, last); drawCircle(oc, 10f, last)
+                        }
                     }
                     if (meters.size > 1) {
                         drawPath(livePath, lime.copy(alpha = .14f), style = Stroke(34f, cap = StrokeCap.Round, join = StrokeJoin.Round))
@@ -433,8 +436,10 @@ fun Glow(modifier: Modifier) {
 }
 
 @Composable
-fun ScreenCol(modifier: Modifier = Modifier, gap: Dp = 16.dp, bottom: Dp = 120.dp, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())
-        .windowInsetsPadding(WindowInsets.statusBars).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = bottom),
-        verticalArrangement = Arrangement.spacedBy(gap), content = content)
+fun ScreenCol(modifier: Modifier = Modifier, gap: Dp = 16.dp, bottom: Dp = 120.dp, maxWidth: Dp = 720.dp, content: @Composable ColumnScope.() -> Unit) {
+    Box(modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = maxWidth).fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = bottom),
+            verticalArrangement = Arrangement.spacedBy(gap), content = content)
+    }
 }

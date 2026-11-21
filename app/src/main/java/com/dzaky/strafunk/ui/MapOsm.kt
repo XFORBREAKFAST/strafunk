@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import org.osmdroid.config.Configuration
@@ -37,14 +38,22 @@ object Osm {
         ColorMatrixColorFilter(inv)
     }
 
-    fun dot(ctx: Context, sizeDp: Int): BitmapDrawable {
+    fun dot(ctx: Context, sizeDp: Int, color: Int = 0xFFC5F82A.toInt()): BitmapDrawable {
         val d = ctx.resources.displayMetrics.density; val s = (sizeDp * d).toInt()
         val b = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888); val c = Canvas(b); val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = 0x55C5F82A; c.drawCircle(s / 2f, s / 2f, s / 2f, p)
+        p.color = (color and 0x00FFFFFF) or 0x55000000; c.drawCircle(s / 2f, s / 2f, s / 2f, p)
         p.color = 0xFFFFFFFF.toInt(); c.drawCircle(s / 2f, s / 2f, s * .26f, p)
-        p.color = 0xFFC5F82A.toInt(); c.drawCircle(s / 2f, s / 2f, s * .19f, p)
+        p.color = color; c.drawCircle(s / 2f, s / 2f, s * .19f, p)
         return BitmapDrawable(ctx.resources, b)
     }
+}
+
+/** geser peta cuma kalau titik mendekati pinggir (biar nggak goyang terus) */
+private fun follow(map: MapView, g: GeoPoint) {
+    val bb = try { map.boundingBox } catch (_: Exception) { null }
+    if (bb == null || bb.latitudeSpan == 0.0) { map.controller.setCenter(g); return }
+    val inner = bb.increaseByScale(.55f)
+    if (!inner.contains(g)) map.controller.animateTo(g)
 }
 
 private class MapHolder(val map: MapView, val glow: Polyline, val line: Polyline, val me: Marker) { var lastVer = -1; var first = true; val rivals = ArrayList<org.osmdroid.views.overlay.Overlay>(); var rivalKey = "" }
@@ -73,22 +82,22 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
         MapHolder(mv, glow, line, me)
     }
     DisposableEffect(Unit) { h.map.onResume(); onDispose { h.map.onPause(); h.map.onDetach() } }
-    AndroidView(factory = { h.map }, modifier = modifier, update = {
+    AndroidView(factory = { h.map }, modifier = modifier.clipToBounds(), update = {
         val rk = others.joinToString { "${it.first.size}:${it.first.lastOrNull()?.get(0)}" }
         if (rk != h.rivalKey) {
             h.rivalKey = rk
             h.map.overlays.removeAll(h.rivals.toSet()); h.rivals.clear()
             others.forEach { (p, col) ->
                 if (p.isEmpty()) return@forEach
-                val pl = Polyline(h.map).apply { outlinePaint.color = col.toInt(); outlinePaint.strokeWidth = 9f; outlinePaint.strokeCap = Paint.Cap.ROUND; setPoints(p.map { GeoPoint(it[0], it[1]) }) }
-                val mk = Marker(h.map).apply { icon = Osm.dot(ctx, 28).also { d -> d.setTint(col.toInt()) }; setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null); position = GeoPoint(p.last()[0], p.last()[1]) }
-                h.map.overlays.add(0, pl); h.map.overlays.add(mk); h.rivals += pl; h.rivals += mk
+                // pemain lain: cuma titik (tanpa garis)
+                val mk = Marker(h.map).apply { icon = Osm.dot(ctx, 34, col.toInt()); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null); position = GeoPoint(p.last()[0], p.last()[1]) }
+                h.map.overlays.add(mk); h.rivals += mk
             }
             h.map.invalidate()
         }
         if (path.isEmpty() && here != null) {
             val g = GeoPoint(here[0], here[1]); h.me.position = g
-            if (h.first) h.map.controller.setCenter(g) else h.map.controller.animateTo(g)
+            if (h.first) h.map.controller.setCenter(g) else follow(h.map, g)
             h.first = false; h.map.invalidate()
         }
         if (path.isNotEmpty() && (h.lastVer != pathVer || h.first)) {
@@ -97,7 +106,7 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
             h.glow.setPoints(pts); h.line.setPoints(pts)
             if (pts.isNotEmpty()) {
                 h.me.position = pts.last()
-                if (live) { if (h.first) h.map.controller.setCenter(pts.last()) else h.map.controller.animateTo(pts.last()) }
+                if (live) { if (h.first) h.map.controller.setCenter(pts.last()) else follow(h.map, pts.last()) }
                 else if (h.first) {
                     if (pts.size > 1) h.map.post { try { h.map.zoomToBoundingBox(BoundingBox.fromGeoPoints(pts).increaseByScale(1.35f), false) } catch (_: Exception) { } }
                     else h.map.controller.setCenter(pts.last())

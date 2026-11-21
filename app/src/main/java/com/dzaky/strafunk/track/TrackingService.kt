@@ -139,6 +139,8 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         private var kLat = 0.0; private var kLng = 0.0; private var kVar = -1.0; private var kT = 0L; private var spdS = 0.0
         private var pathVer = 0
         private var curLat = Double.NaN; private var curLng = Double.NaN; private var curProv = ""
+        // filter posisi tampilan (biar titik nggak lompat-lompat)
+        private var dLat = 0.0; private var dLng = 0.0; private var dVar = -1.0; private var dT = 0L; private var lastAccT = 0L
 
         fun elapsedMs(): Long {
             if (startRt == 0L) return 0
@@ -182,7 +184,7 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
         dist = 0.0; steps = 0; acc = -1f; gotFix = false; est = false
         synchronized(Track.path) { Track.path.clear() }
         splits.clear(); lastLat = Double.NaN; lastStep = -1.0; kmNext = 1000; lastGood = 0; kVar = -1.0; spdS = 0.0; distAt = 0; pathVer = 0
-        curLat = Double.NaN; curLng = Double.NaN; curProv = ""
+        curLat = Double.NaN; curLng = Double.NaN; curProv = ""; dVar = -1.0; dT = 0L; lastAccT = 0L
         startRt = SystemClock.elapsedRealtime(); startWall = System.currentTimeMillis(); pausedTotal = 0; pausedAt = 0
         running = true; active = true
 
@@ -257,9 +259,21 @@ class TrackingService : Service(), LocationListener, SensorEventListener {
     override fun onLocationChanged(l: Location) {
         val prov = l.provider ?: ""
         // posisi & akurasi buat tampilan (semua sumber)
-        if (!(prov == LocationManager.NETWORK_PROVIDER && gotFix && acc in 0f..50f)) {
+        val tNow = System.currentTimeMillis()
+        val aD = maxOf(if (l.hasAccuracy()) l.accuracy.toDouble() else 50.0, 3.0)
+        val coarse = prov == LocationManager.NETWORK_PROVIDER
+        // sumber kasar (WiFi/seluler) nggak boleh nimpa fix akurat yang masih baru
+        if (!(coarse && tNow - lastAccT < 15_000)) {
+            if (dVar < 0 || tNow - dT > 30_000) { dLat = l.latitude; dLng = l.longitude; dVar = aD * aD }
+            else {
+                val dts = (tNow - dT) / 1000.0
+                dVar += dts * 9.0
+                val k = dVar / (dVar + aD * aD)
+                dLat += k * (l.latitude - dLat); dLng += k * (l.longitude - dLng); dVar *= (1 - k)
+            }
+            dT = tNow; curLat = dLat; curLng = dLng; curProv = prov
             acc = if (l.hasAccuracy()) l.accuracy else -1f
-            curLat = l.latitude; curLng = l.longitude; curProv = prov
+            if (!coarse && aD <= 50) lastAccT = tNow
         }
         gotFix = true
         if (!running) { lastLat = Double.NaN; kVar = -1.0; publish(); return }
