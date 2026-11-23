@@ -72,12 +72,12 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
             overlayManager.tilesOverlay.loadingBackgroundColor = 0xFF0C0C0E.toInt()
             overlayManager.tilesOverlay.loadingLineColor = 0xFF1A1A1D.toInt()
             setBackgroundColor(0xFF0C0C0E.toInt())
-            controller.setZoom(17.0)
+            controller.setZoom(18.5)
             isTilesScaledToDpi = true
         }
-        val glow = Polyline(mv).apply { outlinePaint.color = 0x40C5F82A; outlinePaint.strokeWidth = 34f; outlinePaint.strokeCap = Paint.Cap.ROUND; outlinePaint.strokeJoin = Paint.Join.ROUND }
-        val line = Polyline(mv).apply { outlinePaint.color = 0xFFC5F82A.toInt(); outlinePaint.strokeWidth = 13f; outlinePaint.strokeCap = Paint.Cap.ROUND; outlinePaint.strokeJoin = Paint.Join.ROUND }
-        val me = Marker(mv).apply { icon = Osm.dot(ctx, 40); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null) }
+        val glow = Polyline(mv).apply { outlinePaint.color = 0x2EC5F82A; outlinePaint.strokeWidth = 7f * ctx.resources.displayMetrics.density; outlinePaint.strokeCap = Paint.Cap.ROUND; outlinePaint.strokeJoin = Paint.Join.ROUND }
+        val line = Polyline(mv).apply { outlinePaint.color = 0xFFC5F82A.toInt(); outlinePaint.strokeWidth = 3f * ctx.resources.displayMetrics.density; outlinePaint.strokeCap = Paint.Cap.ROUND; outlinePaint.strokeJoin = Paint.Join.ROUND }
+        val me = Marker(mv).apply { icon = Osm.dot(ctx, (22 * ctx.resources.displayMetrics.density).toInt()); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null) }
         mv.overlays.add(glow); mv.overlays.add(line); mv.overlays.add(me)
         MapHolder(mv, glow, line, me)
     }
@@ -90,7 +90,7 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
             others.forEach { (p, col) ->
                 if (p.isEmpty()) return@forEach
                 // pemain lain: cuma titik (tanpa garis)
-                val mk = Marker(h.map).apply { icon = Osm.dot(ctx, 34, col.toInt()); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null); position = GeoPoint(p.last()[0], p.last()[1]) }
+                val mk = Marker(h.map).apply { icon = Osm.dot(ctx, (20 * ctx.resources.displayMetrics.density).toInt(), col.toInt()); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER); setInfoWindow(null); position = GeoPoint(p.last()[0], p.last()[1]) }
                 h.map.overlays.add(mk); h.rivals += mk
             }
             h.map.invalidate()
@@ -102,7 +102,7 @@ fun OsmMap(path: List<DoubleArray>, pathVer: Int, live: Boolean, modifier: Modif
         }
         if (path.isNotEmpty() && (h.lastVer != pathVer || h.first)) {
             h.lastVer = pathVer
-            val pts = path.map { GeoPoint(it[0], it[1]) }
+            val pts = com.dzaky.strafunk.ui.Geo.clean(path).map { GeoPoint(it[0], it[1]) }
             h.glow.setPoints(pts); h.line.setPoints(pts)
             if (pts.isNotEmpty()) {
                 h.me.position = pts.last()

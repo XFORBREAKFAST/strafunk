@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -280,6 +281,30 @@ object Geo {
         return m.map { floatArrayOf(ox + (it[0] - mnx) * sc, oy + (it[1] - mny) * sc) }
     }
 
+    /** Rapihin rute GPS buat tampilan: buang titik rapat (< minM), lalu rata-rata geser 2x.
+     *  Titik awal & akhir tetap persis (biar nyambung ke titik posisi). */
+    fun clean(path: List<DoubleArray>, minM: Double = 4.0): List<DoubleArray> {
+        if (path.size < 3) return path
+        val c = cos(Math.toRadians(path[0][0]))
+        fun d(a: DoubleArray, b: DoubleArray) = hypot((a[0] - b[0]) * 110540, (a[1] - b[1]) * c * 111320)
+        val t = ArrayList<DoubleArray>(); t.add(path[0])
+        for (i in 1 until path.size - 1) if (d(path[i], t.last()) >= minM) t.add(path[i])
+        if (d(path.last(), t.last()) < minM * .5 && t.size > 1) t.removeAt(t.size - 1)
+        t.add(path.last())
+        var cur: List<DoubleArray> = t
+        repeat(2) {
+            val n = cur.size; if (n < 4) return@repeat
+            cur = List(n) { i ->
+                if (i == 0 || i == n - 1) cur[i] else {
+                    val r = minOf(2, i, n - 1 - i); var la = 0.0; var lo = 0.0
+                    for (j in i - r..i + r) { la += cur[j][0]; lo += cur[j][1] }
+                    doubleArrayOf(la / (2 * r + 1), lo / (2 * r + 1))
+                }
+            }
+        }
+        return cur
+    }
+
     fun thin(p: List<FloatArray>, minPx: Float): List<FloatArray> {
         if (p.size < 3) return p
         val o = ArrayList<FloatArray>(); o.add(p[0])
@@ -344,7 +369,8 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
         // ---- live: skala tetap, kamera ikut ----
         val scale = planePx / (if (bike) 1500f else 450f)
         val origin = path.firstOrNull() ?: others.firstOrNull { it.first.isNotEmpty() }?.first?.firstOrNull()
-        val meters = remember(pathVer, path.size, origin) { Geo.meters(Fmt.downsample(path, 900), origin) }
+        val minM = if (bike) 8.0 else 4.0
+        val meters = remember(pathVer, path.size, origin) { Geo.meters(Geo.clean(Fmt.downsample(path, 900), minM), origin) }
         val otherPaths = others.map { (p, c) -> val m = Geo.meters(p, origin); Triple(Geo.smooth(m.map { floatArrayOf(it[0] * scale, it[1] * scale) }), c, m.lastOrNull()?.let { Offset(it[0] * scale, it[1] * scale) }) }
         val livePath = remember(pathVer, path.size, scale) { Geo.smooth(meters.map { floatArrayOf(it[0] * scale, it[1] * scale) }) }
         val cur = meters.lastOrNull()?.let { Offset(it[0] * scale, it[1] * scale) } ?: Offset.Zero
@@ -352,13 +378,13 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
         LaunchedEffect(pathVer, planePx) { tr.animateTo(Offset(planePx / 2, planePx / 2) - cur, tween(1000, easing = LinearEasing)) }
         val head = remember(pathVer) { Geo.heading(meters) }
         // ---- replay: dimuatkan ----
-        val fitPath = remember(path.size, planePx, live) { if (live) Path() else Geo.smooth(Geo.fit(Fmt.downsample(path, 500), planePx, planePx, planePx * .16f)) }
-        val fitPts = remember(path.size, planePx, live) { if (live) emptyList() else Geo.fit(Fmt.downsample(path, 500), planePx, planePx, planePx * .16f) }
+        val fitPts = remember(path.size, planePx, live) { if (live) emptyList() else Geo.fit(Geo.clean(Fmt.downsample(path, 500), minM), planePx, planePx, planePx * .16f) }
+        val fitPath = remember(fitPts) { if (live) Path() else Geo.smooth(fitPts) }
         val measure = remember(fitPath) { android.graphics.PathMeasure(fitPath.asAndroidPath(), false) }
         val seg = remember { android.graphics.Path() }
         val pos = remember { FloatArray(2) }
 
-        Canvas(Modifier.size(planeDp).align(Alignment.Center).graphicsLayer {
+        Canvas(Modifier.requiredSize(planeDp).align(Alignment.Center).graphicsLayer {
             translationY = size.height * .04f
             cameraDistance = 14f * density.density
             if (live) { rotationX = 58f; rotationZ = orbit }
@@ -383,9 +409,8 @@ fun Route3D(path: List<DoubleArray>, pathVer: Int, live: Boolean, bike: Boolean,
                         }
                     }
                     if (meters.size > 1) {
-                        drawPath(livePath, lime.copy(alpha = .14f), style = Stroke(34f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        drawPath(livePath, lime.copy(alpha = .22f), style = Stroke(22f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        drawPath(livePath, lime, style = Stroke(10f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(livePath, lime.copy(alpha = .12f), style = Stroke(26f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(livePath, lime, style = Stroke(9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     }
                     if (meters.isNotEmpty()) {
                         drawCircle(Color.Black, 10f, Offset.Zero); drawCircle(lime, 10f, Offset.Zero, style = Stroke(4f))
